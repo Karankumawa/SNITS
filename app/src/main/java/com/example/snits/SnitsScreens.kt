@@ -528,6 +528,7 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
 data class StudentAttendanceState(
     val rollNo: String,
     val name: String,
+    val year: String = "1st Year",
     var isPresent: Boolean = true
 )
 
@@ -539,6 +540,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
 
     var date by remember { mutableStateOf(todayDate) }
     var subject by remember { mutableStateOf("") }
+    var selectedYearFilter by remember { mutableStateOf("All Years") }
     var isSaving by remember { mutableStateOf(false) }
 
     var studentList by remember { mutableStateOf(listOf<StudentAttendanceState>()) }
@@ -547,6 +549,9 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
     var filterRoll by remember { mutableStateOf("") }
     var searchedRecords by remember { mutableStateOf(listOf<Map<String, Any>>()) }
     var isSearching by remember { mutableStateOf(false) }
+
+    val subjectSuggestions = listOf("C", "C++", "Python", "Java", "DBMS", "Maths")
+    val yearOptions = listOf("All Years", "1st Year", "2nd Year", "3rd Year", "4th Year")
 
     LaunchedEffect(Unit) {
         db.collection("users")
@@ -557,8 +562,9 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                     for (doc in value) {
                         val roll = doc.getString("rollNo") ?: ""
                         val name = doc.getString("name") ?: ""
+                        val year = doc.getString("year") ?: "1st Year"
                         if (roll.isNotBlank()) {
-                            list.add(StudentAttendanceState(roll, name, true))
+                            list.add(StudentAttendanceState(roll, name, year, true))
                             if (!attendanceStatusMap.containsKey(roll)) {
                                 attendanceStatusMap[roll] = true
                             }
@@ -567,6 +573,13 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                     studentList = list.sortedBy { it.rollNo }
                 }
             }
+    }
+
+    // Filter students by selected Year
+    val filteredStudentList = if (selectedYearFilter == "All Years") {
+        studentList
+    } else {
+        studentList.filter { it.year == selectedYearFilter }
     }
 
     ElevatedCard(
@@ -581,9 +594,30 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                 Text("Daily Class Attendance Sheet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Select Date & Subject to mark attendance for all registered students.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Filter by Year & select Subject to mark attendance easily.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(modifier = Modifier.height(14.dp))
+
+            // Select Academic Year Filter Chips
+            Text("1. Select Student Year:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                yearOptions.forEach { yr ->
+                    FilterChip(
+                        selected = selectedYearFilter == yr,
+                        onClick = { selectedYearFilter = yr },
+                        label = { Text(yr, fontSize = 12.sp) },
+                        leadingIcon = if (selectedYearFilter == yr) {
+                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                        } else null
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedTextField(
                 value = date,
@@ -594,12 +628,32 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                 singleLine = true,
                 shape = RoundedCornerShape(10.dp)
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Subject Input + Quick Chips
+            Text("2. Select or Type Subject Name:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                subjectSuggestions.forEach { subj ->
+                    SuggestionChip(
+                        onClick = { subject = subj },
+                        label = { Text(subj, fontSize = 12.sp) },
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = if (subject == subj) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
 
             OutlinedTextField(
                 value = subject,
                 onValueChange = { subject = it },
-                label = { Text("Subject Name (e.g. DBMS, Java)") },
+                label = { Text("Subject Name") },
                 leadingIcon = { Icon(Icons.Default.Book, contentDescription = "Subject") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -610,7 +664,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        studentList.forEach { attendanceStatusMap[it.rollNo] = true }
+                        filteredStudentList.forEach { attendanceStatusMap[it.rollNo] = true }
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp)
@@ -619,7 +673,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                 }
                 OutlinedButton(
                     onClick = {
-                        studentList.forEach { attendanceStatusMap[it.rollNo] = false }
+                        filteredStudentList.forEach { attendanceStatusMap[it.rollNo] = false }
                     },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(10.dp)
@@ -632,14 +686,14 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
             HorizontalDivider()
             Spacer(modifier = Modifier.height(12.dp))
 
-            if (studentList.isEmpty()) {
+            if (filteredStudentList.isEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "No registered students found. Register students from the 'Register User' tab.",
+                        text = "No students found for $selectedYearFilter. Register students or change year filter.",
                         fontSize = 13.sp,
                         modifier = Modifier.padding(12.dp)
                     )
@@ -650,15 +704,15 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Registered Students List", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Students List ($selectedYearFilter)", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) {
-                        Text("${studentList.size} Students", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        Text("${filteredStudentList.size} Students", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                     }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                studentList.forEach { student ->
+                filteredStudentList.forEach { student ->
                     val isPresent = attendanceStatusMap[student.rollNo] ?: true
 
                     OutlinedCard(
@@ -678,11 +732,25 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "${student.rollNo} - ${student.name}",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "${student.rollNo} - ${student.name}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.secondaryContainer
+                                    ) {
+                                        Text(
+                                            text = student.year,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
                                 Text(
                                     text = if (isPresent) "Status: Present" else "Status: Absent",
                                     fontSize = 12.sp,
@@ -729,9 +797,9 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                             }
                             isSaving = true
                             var savedCount = 0
-                            val totalToSave = studentList.size
+                            val totalToSave = filteredStudentList.size
 
-                            studentList.forEach { student ->
+                            filteredStudentList.forEach { student ->
                                 val status = if (attendanceStatusMap[student.rollNo] == true) "Present" else "Absent"
                                 val docId = "${student.rollNo}_${date.trim()}_${subject.trim()}"
                                 val map = hashMapOf(
@@ -739,6 +807,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                                     "date" to date.trim(),
                                     "subject" to subject.trim(),
                                     "status" to status,
+                                    "year" to student.year,
                                     "timestamp" to System.currentTimeMillis()
                                 )
                                 db.collection("attendance").document(docId).set(map)
@@ -746,7 +815,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                                         savedCount++
                                         if (savedCount >= totalToSave) {
                                             isSaving = false
-                                            Toast.makeText(context, "Attendance Saved for $savedCount Students!", Toast.LENGTH_LONG).show()
+                                            Toast.makeText(context, "Attendance Saved for $savedCount Students ($selectedYearFilter)!", Toast.LENGTH_LONG).show()
                                         }
                                     }
                             }
@@ -756,7 +825,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                     ) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save Attendance for All Students", fontWeight = FontWeight.Bold)
+                        Text("Save Attendance for $selectedYearFilter Students", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1054,7 +1123,8 @@ data class RegisteredUserData(
     val name: String,
     val email: String,
     val role: String,
-    val rollNo: String
+    val rollNo: String,
+    val year: String = "1st Year"
 )
 
 // --- TEACHER TAB 2: REGISTER NEW STUDENT / TEACHER ---
@@ -1066,13 +1136,17 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
     var regPassword by remember { mutableStateOf("") }
     var regRole by remember { mutableStateOf("student") }
     var regRollNo by remember { mutableStateOf("") }
+    var regYear by remember { mutableStateOf("1st Year") }
     var isRegistering by remember { mutableStateOf(false) }
 
-    var selectedFilter by remember { mutableStateOf("All") }
+    var selectedRoleFilter by remember { mutableStateOf("All") }
+    var selectedYearFilter by remember { mutableStateOf("All Years") }
     var userList by remember { mutableStateOf(listOf<RegisteredUserData>()) }
 
     var userToEdit by remember { mutableStateOf<RegisteredUserData?>(null) }
     var userToDelete by remember { mutableStateOf<RegisteredUserData?>(null) }
+
+    val yearsList = listOf("1st Year", "2nd Year", "3rd Year", "4th Year")
 
     LaunchedEffect(Unit) {
         db.collection("users").addSnapshotListener { value, _ ->
@@ -1085,7 +1159,8 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                             name = doc.getString("name") ?: "",
                             email = doc.getString("email") ?: "",
                             role = doc.getString("role") ?: "",
-                            rollNo = doc.getString("rollNo") ?: ""
+                            rollNo = doc.getString("rollNo") ?: "",
+                            year = doc.getString("year") ?: "1st Year"
                         )
                     )
                 }
@@ -1099,6 +1174,7 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
         val user = userToEdit!!
         var editName by remember { mutableStateOf(user.name) }
         var editRollNo by remember { mutableStateOf(user.rollNo) }
+        var editYear by remember { mutableStateOf(user.year) }
         var editEmail by remember { mutableStateOf(user.email) }
         var isUpdating by remember { mutableStateOf(false) }
 
@@ -1124,6 +1200,21 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                             modifier = Modifier.fillMaxWidth()
                         )
                         Spacer(modifier = Modifier.height(8.dp))
+
+                        Text("Academic Year:", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            yearsList.forEach { yr ->
+                                FilterChip(
+                                    selected = editYear == yr,
+                                    onClick = { editYear = yr },
+                                    label = { Text(yr, fontSize = 11.sp) }
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                     OutlinedTextField(
                         value = editEmail,
@@ -1141,7 +1232,8 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                         val updateMap = hashMapOf<String, Any>(
                             "name" to editName.trim(),
                             "email" to editEmail.trim().lowercase(),
-                            "rollNo" to if (user.role == "student") editRollNo.trim().uppercase() else "TEACHER"
+                            "rollNo" to if (user.role == "student") editRollNo.trim().uppercase() else "TEACHER",
+                            "year" to if (user.role == "student") editYear else "N/A"
                         )
                         db.collection("users").document(user.uid).update(updateMap)
                             .addOnSuccessListener {
@@ -1225,6 +1317,24 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
             }
 
             if (regRole == "student") {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Select Academic Year:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(4.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    yearsList.forEach { yr ->
+                        FilterChip(
+                            selected = regYear == yr,
+                            onClick = { regYear = yr },
+                            label = { Text(yr, fontSize = 12.sp) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = regRollNo,
                     onValueChange = { regRollNo = it.uppercase() },
@@ -1281,6 +1391,7 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                             name = regName,
                             role = regRole,
                             rollNo = regRollNo,
+                            year = regYear,
                             onSuccess = {
                                 isRegistering = false
                                 Toast.makeText(context, "New $regRole Registered Successfully!", Toast.LENGTH_SHORT).show()
@@ -1311,27 +1422,46 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
     Text("Registered Users List (${userList.size})", fontWeight = FontWeight.Bold, fontSize = 18.sp)
     Spacer(modifier = Modifier.height(4.dp))
 
+    // Filter by Role
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         listOf("All", "student", "teacher").forEach { roleFilter ->
             FilterChip(
-                selected = selectedFilter == roleFilter,
-                onClick = { selectedFilter = roleFilter },
-                label = { Text(if (roleFilter == "All") "All Users" else roleFilter.replaceFirstChar { it.uppercase() }, fontSize = 12.sp) }
+                selected = selectedRoleFilter == roleFilter,
+                onClick = { selectedRoleFilter = roleFilter },
+                label = { Text(if (roleFilter == "All") "All Roles" else roleFilter.replaceFirstChar { it.uppercase() }, fontSize = 12.sp) }
             )
         }
     }
 
-    val filteredUsers = if (selectedFilter == "All") {
-        userList
-    } else {
-        userList.filter { it.role == selectedFilter }
+    Spacer(modifier = Modifier.height(4.dp))
+
+    // Filter by Year
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        (listOf("All Years") + yearsList).forEach { yrFilter ->
+            FilterChip(
+                selected = selectedYearFilter == yrFilter,
+                onClick = { selectedYearFilter = yrFilter },
+                label = { Text(yrFilter, fontSize = 11.sp) }
+            )
+        }
     }
 
+    val filteredUsers = userList.filter { user ->
+        val roleMatch = selectedRoleFilter == "All" || user.role == selectedRoleFilter
+        val yearMatch = selectedYearFilter == "All Years" || user.year == selectedYearFilter
+        roleMatch && yearMatch
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
     if (filteredUsers.isEmpty()) {
-        Text("No users found.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("No users found for selected filters.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         filteredUsers.forEach { user ->
             OutlinedCard(
@@ -1350,14 +1480,14 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                     Column(modifier = Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(user.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
                                 color = if (user.role == "teacher") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
                             ) {
                                 Text(
                                     text = user.role.uppercase(),
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1365,7 +1495,7 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                         }
                         Text("Email: ${user.email}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (user.role == "student") {
-                            Text("Roll No: ${user.rollNo}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                            Text("Roll No: ${user.rollNo} | Year: ${user.year}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                         }
                     }
 
@@ -1390,6 +1520,7 @@ fun createNewUserByTeacher(
     name: String,
     role: String,
     rollNo: String,
+    year: String = "1st Year",
     onSuccess: () -> Unit,
     onError: (String) -> Unit
 ) {
@@ -1409,7 +1540,8 @@ fun createNewUserByTeacher(
                     "name" to name.trim(),
                     "email" to cleanEmail,
                     "rollNo" to if (role == "student") rollNo.trim().uppercase() else "TEACHER",
-                    "role" to role
+                    "role" to role,
+                    "year" to if (role == "student") year else "N/A"
                 )
                 db.collection("users").document(newUid).set(userMap)
                     .addOnSuccessListener {
