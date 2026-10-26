@@ -134,11 +134,11 @@ fun PortalTopHeader(
                         shadowElevation = 2.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = "SN",
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                fontWeight = FontWeight.Black,
-                                fontSize = 18.sp
+                            Icon(
+                                imageVector = Icons.Default.School,
+                                contentDescription = "SNITS Logo",
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(28.dp)
                             )
                         }
                     }
