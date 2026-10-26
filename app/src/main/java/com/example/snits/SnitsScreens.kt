@@ -377,6 +377,10 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                         val uid = result.user!!.uid
 
                                         scope.launch {
+                                            var userRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
+                                            var userRoll = cleanEmail.substringBefore("@").uppercase()
+                                            var userName = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
+
                                             try {
                                                 val users = withContext(Dispatchers.IO) {
                                                     SupabaseManager.client.postgrest["users"]
@@ -384,12 +388,12 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                         .decodeList<SupabaseUser>()
                                                 }
 
-                                                isLoading = false
                                                 if (users.isNotEmpty()) {
                                                     val user = users[0]
-                                                    onLoginSuccess(user.role, user.rollNo, user.name)
+                                                    userRole = user.role
+                                                    userRoll = user.rollNo
+                                                    userName = user.name
                                                 } else {
-                                                    // Search by email in Supabase
                                                     val emailUsers = withContext(Dispatchers.IO) {
                                                         SupabaseManager.client.postgrest["users"]
                                                             .select { filter { eq("email", cleanEmail) } }
@@ -398,6 +402,10 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
 
                                                     if (emailUsers.isNotEmpty()) {
                                                         val foundUser = emailUsers[0]
+                                                        userRole = foundUser.role
+                                                        userRoll = foundUser.rollNo
+                                                        userName = foundUser.name
+
                                                         val syncedUser = SupabaseUser(
                                                             uid = uid,
                                                             name = foundUser.name,
@@ -406,33 +414,32 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                             rollNo = foundUser.rollNo,
                                                             year = foundUser.year
                                                         )
-                                                        withContext(Dispatchers.IO) {
-                                                            SupabaseManager.client.postgrest["users"].upsert(syncedUser)
-                                                        }
-                                                        onLoginSuccess(foundUser.role, foundUser.rollNo, foundUser.name)
+                                                        try {
+                                                            withContext(Dispatchers.IO) {
+                                                                SupabaseManager.client.postgrest["users"].upsert(syncedUser)
+                                                            }
+                                                        } catch (_: Exception) {}
                                                     } else {
-                                                        // Auto-create user profile in Supabase
-                                                        val defaultRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
-                                                        val defaultRoll = cleanEmail.substringBefore("@").uppercase()
-                                                        val defaultName = cleanEmail.substringBefore("@").replace(".", " ")
-
                                                         val newUser = SupabaseUser(
                                                             uid = uid,
-                                                            name = defaultName,
+                                                            name = userName,
                                                             email = cleanEmail,
-                                                            role = defaultRole,
-                                                            rollNo = if (defaultRole == "student") defaultRoll else "TEACHER",
+                                                            role = userRole,
+                                                            rollNo = if (userRole == "student") userRoll else "TEACHER",
                                                             year = "1st Year"
                                                         )
-                                                        withContext(Dispatchers.IO) {
-                                                            SupabaseManager.client.postgrest["users"].upsert(newUser)
-                                                        }
-                                                        onLoginSuccess(defaultRole, defaultRoll, defaultName)
+                                                        try {
+                                                            withContext(Dispatchers.IO) {
+                                                                SupabaseManager.client.postgrest["users"].upsert(newUser)
+                                                            }
+                                                        } catch (_: Exception) {}
                                                     }
                                                 }
-                                            } catch (e: Exception) {
+                                            } catch (_: Exception) {
+                                                // Non-blocking fallback if Supabase DB query fails
+                                            } finally {
                                                 isLoading = false
-                                                Toast.makeText(context, "Supabase Sync Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                                onLoginSuccess(userRole, userRoll, userName)
                                             }
                                         }
                                     }
