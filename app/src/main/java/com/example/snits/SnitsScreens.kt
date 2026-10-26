@@ -22,10 +22,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 // ==========================================
 // COMMON UI: ALIGNED PORTAL TOP HEADER
@@ -114,7 +118,6 @@ fun PortalTopHeader(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // ROW 1: Header Brand Logo + Title on Left, Action Buttons Group on Right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -150,7 +153,7 @@ fun PortalTopHeader(
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "SNITS College Portal",
+                            text = "SNITS College Portal (Supabase DB)",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontWeight = FontWeight.Medium
@@ -160,7 +163,6 @@ fun PortalTopHeader(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Action Buttons Group (Key Icon + Logout Button)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -202,7 +204,6 @@ fun PortalTopHeader(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ROW 2: Welcome User Profile Banner (Surface pill container)
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -257,13 +258,13 @@ fun PortalTopHeader(
 }
 
 // ==========================================
-// 1. AUTH SCREEN (Login Only for Public Users)
+// 1. AUTH SCREEN (Firebase Auth + Supabase User Sync)
 // ==========================================
 @Composable
 fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> Unit) {
     val context = LocalContext.current
     val auth = FirebaseAuth.getInstance()
-    val db = FirebaseFirestore.getInstance()
+    val scope = rememberCoroutineScope()
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -375,59 +376,65 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                     .addOnSuccessListener { result ->
                                         val uid = result.user!!.uid
 
-                                        db.collection("users").document(uid).get()
-                                            .addOnSuccessListener { doc ->
-                                                if (doc.exists()) {
-                                                    isLoading = false
-                                                    val role = doc.getString("role") ?: "student"
-                                                    val savedRoll = doc.getString("rollNo") ?: ""
-                                                    val name = doc.getString("name") ?: "User"
-                                                    onLoginSuccess(role, savedRoll, name)
-                                                } else {
-                                                    db.collection("users").whereEqualTo("email", cleanEmail).get()
-                                                        .addOnSuccessListener { queryResult ->
-                                                            isLoading = false
-                                                            if (!queryResult.isEmpty) {
-                                                                val foundDoc = queryResult.documents[0]
-                                                                val role = foundDoc.getString("role") ?: "student"
-                                                                val savedRoll = foundDoc.getString("rollNo") ?: ""
-                                                                val name = foundDoc.getString("name") ?: "User"
-
-                                                                val userMap = hashMapOf(
-                                                                    "uid" to uid,
-                                                                    "name" to name,
-                                                                    "email" to cleanEmail,
-                                                                    "rollNo" to savedRoll,
-                                                                    "role" to role
-                                                                )
-                                                                db.collection("users").document(uid).set(userMap)
-
-                                                                onLoginSuccess(role, savedRoll, name)
-                                                            } else {
-                                                                val defaultRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
-                                                                val defaultRoll = cleanEmail.substringBefore("@").uppercase()
-                                                                val defaultName = cleanEmail.substringBefore("@").replace(".", " ")
-
-                                                                val userMap = hashMapOf(
-                                                                    "uid" to uid,
-                                                                    "name" to defaultName,
-                                                                    "email" to cleanEmail,
-                                                                    "rollNo" to if (defaultRole == "student") defaultRoll else "TEACHER",
-                                                                    "role" to defaultRole
-                                                                )
-                                                                db.collection("users").document(uid).set(userMap)
-                                                                onLoginSuccess(defaultRole, defaultRoll, defaultName)
-                                                            }
-                                                        }
-                                                        .addOnFailureListener {
-                                                            isLoading = false
-                                                            val defaultRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
-                                                            val defaultRoll = cleanEmail.substringBefore("@").uppercase()
-                                                            val defaultName = cleanEmail.substringBefore("@").replace(".", " ")
-                                                            onLoginSuccess(defaultRole, defaultRoll, defaultName)
-                                                        }
+                                        scope.launch {
+                                            try {
+                                                val users = withContext(Dispatchers.IO) {
+                                                    SupabaseManager.client.postgrest["users"]
+                                                        .select { filter { eq("uid", uid) } }
+                                                        .decodeList<SupabaseUser>()
                                                 }
+
+                                                isLoading = false
+                                                if (users.isNotEmpty()) {
+                                                    val user = users[0]
+                                                    onLoginSuccess(user.role, user.rollNo, user.name)
+                                                } else {
+                                                    // Search by email in Supabase
+                                                    val emailUsers = withContext(Dispatchers.IO) {
+                                                        SupabaseManager.client.postgrest["users"]
+                                                            .select { filter { eq("email", cleanEmail) } }
+                                                            .decodeList<SupabaseUser>()
+                                                    }
+
+                                                    if (emailUsers.isNotEmpty()) {
+                                                        val foundUser = emailUsers[0]
+                                                        val syncedUser = SupabaseUser(
+                                                            uid = uid,
+                                                            name = foundUser.name,
+                                                            email = cleanEmail,
+                                                            role = foundUser.role,
+                                                            rollNo = foundUser.rollNo,
+                                                            year = foundUser.year
+                                                        )
+                                                        withContext(Dispatchers.IO) {
+                                                            SupabaseManager.client.postgrest["users"].upsert(syncedUser)
+                                                        }
+                                                        onLoginSuccess(foundUser.role, foundUser.rollNo, foundUser.name)
+                                                    } else {
+                                                        // Auto-create user profile in Supabase
+                                                        val defaultRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
+                                                        val defaultRoll = cleanEmail.substringBefore("@").uppercase()
+                                                        val defaultName = cleanEmail.substringBefore("@").replace(".", " ")
+
+                                                        val newUser = SupabaseUser(
+                                                            uid = uid,
+                                                            name = defaultName,
+                                                            email = cleanEmail,
+                                                            role = defaultRole,
+                                                            rollNo = if (defaultRole == "student") defaultRoll else "TEACHER",
+                                                            year = "1st Year"
+                                                        )
+                                                        withContext(Dispatchers.IO) {
+                                                            SupabaseManager.client.postgrest["users"].upsert(newUser)
+                                                        }
+                                                        onLoginSuccess(defaultRole, defaultRoll, defaultName)
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                isLoading = false
+                                                Toast.makeText(context, "Supabase Sync Error: ${e.message}", Toast.LENGTH_LONG).show()
                                             }
+                                        }
                                     }
                                     .addOnFailureListener { e ->
                                         isLoading = false
@@ -464,7 +471,7 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "New Student / Teacher registrations are managed by Admin/Teachers.",
+                        text = "Authentication powered by Firebase Auth & Database by Supabase.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -479,9 +486,6 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
 // ==========================================
 @Composable
 fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
-    val context = LocalContext.current
-    val db = FirebaseFirestore.getInstance()
-
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Class Attendance", "Notes & Materials", "Register User")
 
@@ -518,24 +522,19 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
 
         when (selectedTab) {
-            0 -> ClassAttendanceSection(db = db, context = context)
-            1 -> MaterialsManagementSection(db = db, context = context)
-            2 -> UserRegistrationSection(db = db, context = context)
+            0 -> ClassAttendanceSection()
+            1 -> MaterialsManagementSection()
+            2 -> UserRegistrationSection()
         }
     }
 }
 
-data class StudentAttendanceState(
-    val rollNo: String,
-    val name: String,
-    val year: String = "1st Year",
-    var isPresent: Boolean = true
-)
-
 // --- TEACHER TAB 0: BATCH CLASS ATTENDANCE SHEET ---
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Context) {
+fun ClassAttendanceSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val todayDate = remember { SimpleDateFormat("dd-MM-yyyy", Locale.getDefault()).format(Date()) }
 
     var date by remember { mutableStateOf(todayDate) }
@@ -543,39 +542,41 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
     var selectedYearFilter by remember { mutableStateOf("All Years") }
     var isSaving by remember { mutableStateOf(false) }
 
-    var studentList by remember { mutableStateOf(listOf<StudentAttendanceState>()) }
+    var studentList by remember { mutableStateOf(listOf<SupabaseUser>()) }
     val attendanceStatusMap = remember { mutableStateMapOf<String, Boolean>() }
 
     var filterRoll by remember { mutableStateOf("") }
-    var searchedRecords by remember { mutableStateOf(listOf<Map<String, Any>>()) }
+    var searchedRecords by remember { mutableStateOf(listOf<SupabaseAttendance>()) }
     var isSearching by remember { mutableStateOf(false) }
 
     val subjectSuggestions = listOf("C", "C++", "Python", "Java", "DBMS", "Maths")
     val yearOptions = listOf("All Years", "1st Year", "2nd Year", "3rd Year", "4th Year")
 
-    LaunchedEffect(Unit) {
-        db.collection("users")
-            .whereEqualTo("role", "student")
-            .addSnapshotListener { value, _ ->
-                if (value != null) {
-                    val list = mutableListOf<StudentAttendanceState>()
-                    for (doc in value) {
-                        val roll = doc.getString("rollNo") ?: ""
-                        val name = doc.getString("name") ?: ""
-                        val year = doc.getString("year") ?: "1st Year"
-                        if (roll.isNotBlank()) {
-                            list.add(StudentAttendanceState(roll, name, year, true))
-                            if (!attendanceStatusMap.containsKey(roll)) {
-                                attendanceStatusMap[roll] = true
-                            }
-                        }
-                    }
-                    studentList = list.sortedBy { it.rollNo }
+    // Fetch registered students from Supabase
+    fun loadStudents() {
+        scope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["users"]
+                        .select { filter { eq("role", "student") } }
+                        .decodeList<SupabaseUser>()
                 }
+                studentList = list.sortedBy { it.rollNo }
+                list.forEach {
+                    if (!attendanceStatusMap.containsKey(it.rollNo)) {
+                        attendanceStatusMap[it.rollNo] = true
+                    }
+                }
+            } catch (e: Exception) {
+                // handle silently or toast
             }
+        }
     }
 
-    // Filter students by selected Year
+    LaunchedEffect(Unit) {
+        loadStudents()
+    }
+
     val filteredStudentList = if (selectedYearFilter == "All Years") {
         studentList
     } else {
@@ -594,11 +595,10 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                 Text("Daily Class Attendance Sheet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Filter by Year & select Subject to mark attendance easily.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Filter by Year & select Subject to mark attendance easily in Supabase.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Select Academic Year Filter Chips
             Text("1. Select Student Year:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
             FlowRow(
@@ -630,7 +630,6 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Subject Input + Quick Chips
             Text("2. Select or Type Subject Name:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
             FlowRow(
@@ -693,7 +692,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "No students found for $selectedYearFilter. Register students or change year filter.",
+                        text = "No students found for $selectedYearFilter in Supabase DB.",
                         fontSize = 13.sp,
                         modifier = Modifier.padding(12.dp)
                     )
@@ -796,28 +795,31 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                                 return@Button
                             }
                             isSaving = true
-                            var savedCount = 0
-                            val totalToSave = filteredStudentList.size
 
-                            filteredStudentList.forEach { student ->
-                                val status = if (attendanceStatusMap[student.rollNo] == true) "Present" else "Absent"
-                                val docId = "${student.rollNo}_${date.trim()}_${subject.trim()}"
-                                val map = hashMapOf(
-                                    "rollNo" to student.rollNo,
-                                    "date" to date.trim(),
-                                    "subject" to subject.trim(),
-                                    "status" to status,
-                                    "year" to student.year,
-                                    "timestamp" to System.currentTimeMillis()
-                                )
-                                db.collection("attendance").document(docId).set(map)
-                                    .addOnSuccessListener {
-                                        savedCount++
-                                        if (savedCount >= totalToSave) {
-                                            isSaving = false
-                                            Toast.makeText(context, "Attendance Saved for $savedCount Students ($selectedYearFilter)!", Toast.LENGTH_LONG).show()
-                                        }
+                            scope.launch {
+                                try {
+                                    val attendanceBatch = filteredStudentList.map { student ->
+                                        SupabaseAttendance(
+                                            docId = "${student.rollNo}_${date.trim()}_${subject.trim()}",
+                                            rollNo = student.rollNo,
+                                            date = date.trim(),
+                                            subject = subject.trim(),
+                                            status = if (attendanceStatusMap[student.rollNo] == true) "Present" else "Absent",
+                                            year = student.year,
+                                            timestamp = System.currentTimeMillis()
+                                        )
                                     }
+
+                                    withContext(Dispatchers.IO) {
+                                        SupabaseManager.client.postgrest["attendance"].upsert(attendanceBatch)
+                                    }
+
+                                    isSaving = false
+                                    Toast.makeText(context, "Attendance Saved to Supabase for ${filteredStudentList.size} Students!", Toast.LENGTH_LONG).show()
+                                } catch (e: Exception) {
+                                    isSaving = false
+                                    Toast.makeText(context, "Supabase Save Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
                             }
                         },
                         shape = RoundedCornerShape(12.dp),
@@ -825,7 +827,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                     ) {
                         Icon(Icons.Default.Save, contentDescription = "Save")
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Save Attendance for $selectedYearFilter Students", fontWeight = FontWeight.Bold)
+                        Text("Save Attendance to Supabase", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -840,7 +842,7 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
         elevation = CardDefaults.elevatedCardElevation(3.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("2. Search & Edit Past Attendance", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("2. Search & Edit Past Attendance (Supabase)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(modifier = Modifier.height(8.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -861,23 +863,20 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                             return@Button
                         }
                         isSearching = true
-                        db.collection("attendance")
-                            .whereEqualTo("rollNo", filterRoll.trim())
-                            .get()
-                            .addOnSuccessListener { result ->
-                                isSearching = false
-                                val list = mutableListOf<Map<String, Any>>()
-                                for (doc in result) {
-                                    val item = mutableMapOf<String, Any>()
-                                    item["id"] = doc.id
-                                    item["rollNo"] = doc.getString("rollNo") ?: ""
-                                    item["date"] = doc.getString("date") ?: ""
-                                    item["subject"] = doc.getString("subject") ?: ""
-                                    item["status"] = doc.getString("status") ?: ""
-                                    list.add(item)
+                        scope.launch {
+                            try {
+                                val records = withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["attendance"]
+                                        .select { filter { eq("rollNo", filterRoll.trim()) } }
+                                        .decodeList<SupabaseAttendance>()
                                 }
-                                searchedRecords = list
+                                isSearching = false
+                                searchedRecords = records
+                            } catch (e: Exception) {
+                                isSearching = false
+                                Toast.makeText(context, "Search Error: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
+                        }
                     },
                     shape = RoundedCornerShape(10.dp)
                 ) {
@@ -890,15 +889,9 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
             if (isSearching) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else if (searchedRecords.isEmpty()) {
-                Text("Search box me Roll No daal kar purani attendance dekhein aur modify karein.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Search box me Roll No daal kar purani attendance dekhein.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 searchedRecords.forEach { record ->
-                    val id = record["id"].toString()
-                    val recRoll = record["rollNo"].toString()
-                    val recDate = record["date"].toString()
-                    val recSub = record["subject"].toString()
-                    val recStatus = record["status"].toString()
-
                     OutlinedCard(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -913,33 +906,47 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("$recRoll | $recDate", fontWeight = FontWeight.Bold)
-                                Text("Subject: $recSub", fontSize = 13.sp)
+                                Text("${record.rollNo} | ${record.date}", fontWeight = FontWeight.Bold)
+                                Text("Subject: ${record.subject}", fontSize = 13.sp)
                                 Text(
-                                    text = "Status: $recStatus",
+                                    text = "Status: ${record.status}",
                                     fontWeight = FontWeight.Bold,
-                                    color = if (recStatus == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    color = if (record.status == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
                                 )
                             }
                             Row {
                                 TextButton(onClick = {
-                                    val newStatus = if (recStatus == "Present") "Absent" else "Present"
-                                    db.collection("attendance").document(id).update("status", newStatus)
-                                        .addOnSuccessListener {
-                                            Toast.makeText(context, "Updated to $newStatus!", Toast.LENGTH_SHORT).show()
-                                            searchedRecords = searchedRecords.map {
-                                                if (it["id"] == id) it.toMutableMap().apply { put("status", newStatus) } else it
+                                    val newStatus = if (record.status == "Present") "Absent" else "Present"
+                                    scope.launch {
+                                        try {
+                                            val updated = record.copy(status = newStatus)
+                                            withContext(Dispatchers.IO) {
+                                                SupabaseManager.client.postgrest["attendance"].upsert(updated)
                                             }
+                                            searchedRecords = searchedRecords.map {
+                                                if (it.docId == record.docId) updated else it
+                                            }
+                                            Toast.makeText(context, "Updated to $newStatus!", Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Update error!", Toast.LENGTH_SHORT).show()
                                         }
+                                    }
                                 }) {
                                     Text("Change")
                                 }
                                 IconButton(onClick = {
-                                    db.collection("attendance").document(id).delete()
-                                        .addOnSuccessListener {
+                                    scope.launch {
+                                        try {
+                                            withContext(Dispatchers.IO) {
+                                                SupabaseManager.client.postgrest["attendance"]
+                                                    .delete { filter { eq("docId", record.docId) } }
+                                            }
+                                            searchedRecords = searchedRecords.filter { it.docId != record.docId }
                                             Toast.makeText(context, "Deleted!", Toast.LENGTH_SHORT).show()
-                                            searchedRecords = searchedRecords.filter { it["id"] != id }
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Delete error!", Toast.LENGTH_SHORT).show()
                                         }
+                                    }
                                 }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
@@ -955,31 +962,34 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
 // --- TEACHER TAB 1: NOTES, TIMETABLE & MATERIALS MANAGEMENT ---
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.Context) {
+fun MaterialsManagementSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var selectedCategory by remember { mutableStateOf("Notes") }
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
-    var materialsList by remember { mutableStateOf(listOf<Map<String, String>>()) }
+    var materialsList by remember { mutableStateOf(listOf<SupabaseMaterial>()) }
 
     val categories = listOf("Notes", "Timetable", "Assignment", "Daily Activity")
 
-    LaunchedEffect(Unit) {
-        db.collection("materials").addSnapshotListener { value, _ ->
-            if (value != null) {
-                val list = mutableListOf<Map<String, String>>()
-                for (doc in value) {
-                    list.add(
-                        mapOf(
-                            "id" to doc.id,
-                            "category" to (doc.getString("category") ?: ""),
-                            "title" to (doc.getString("title") ?: ""),
-                            "description" to (doc.getString("description") ?: "")
-                        )
-                    )
+    fun loadMaterials() {
+        scope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["materials"]
+                        .select()
+                        .decodeList<SupabaseMaterial>()
                 }
                 materialsList = list
+            } catch (e: Exception) {
+                // handle
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        loadMaterials()
     }
 
     ElevatedCard(
@@ -1037,18 +1047,26 @@ fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.C
                         Toast.makeText(context, "Details aur Title dono bharein!", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    val data = hashMapOf(
-                        "category" to selectedCategory,
-                        "title" to title.trim(),
-                        "description" to description.trim(),
-                        "timestamp" to System.currentTimeMillis()
-                    )
-                    db.collection("materials").add(data)
-                        .addOnSuccessListener {
-                            Toast.makeText(context, "$selectedCategory Published!", Toast.LENGTH_SHORT).show()
+                    scope.launch {
+                        try {
+                            val newMaterial = SupabaseMaterial(
+                                id = UUID.randomUUID().toString(),
+                                category = selectedCategory,
+                                title = title.trim(),
+                                description = description.trim(),
+                                timestamp = System.currentTimeMillis()
+                            )
+                            withContext(Dispatchers.IO) {
+                                SupabaseManager.client.postgrest["materials"].insert(newMaterial)
+                            }
+                            Toast.makeText(context, "$selectedCategory Published to Supabase!", Toast.LENGTH_SHORT).show()
                             title = ""
                             description = ""
+                            loadMaterials()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Publish Error: ${e.message}", Toast.LENGTH_LONG).show()
                         }
+                    }
                 },
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
@@ -1062,14 +1080,13 @@ fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.C
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    Text("Manage Published Content", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    Text("Manage Published Content (Supabase)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
     Spacer(modifier = Modifier.height(4.dp))
 
     if (materialsList.isEmpty()) {
         Text("Abhi koi material published nahi hai.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     } else {
         materialsList.forEach { item ->
-            val docId = item["id"] ?: ""
             OutlinedCard(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1089,7 +1106,7 @@ fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.C
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
                             Text(
-                                text = (item["category"] ?: "").uppercase(),
+                                text = item.category.uppercase(),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1097,17 +1114,24 @@ fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.C
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = item["title"] ?: "",
+                            text = item.title,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
-                        Text(text = item["description"] ?: "", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(text = item.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     IconButton(onClick = {
-                        db.collection("materials").document(docId).delete()
-                            .addOnSuccessListener {
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["materials"].delete { filter { eq("id", item.id) } }
+                                }
                                 Toast.makeText(context, "Deleted!", Toast.LENGTH_SHORT).show()
+                                loadMaterials()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Delete Error!", Toast.LENGTH_SHORT).show()
                             }
+                        }
                     }) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
                     }
@@ -1117,20 +1141,13 @@ fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.C
     }
 }
 
-// Data class for Registered User
-data class RegisteredUserData(
-    val uid: String,
-    val name: String,
-    val email: String,
-    val role: String,
-    val rollNo: String,
-    val year: String = "1st Year"
-)
-
 // --- TEACHER TAB 2: REGISTER NEW STUDENT / TEACHER ---
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Context) {
+fun UserRegistrationSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
     var regName by remember { mutableStateOf("") }
     var regEmail by remember { mutableStateOf("") }
     var regPassword by remember { mutableStateOf("") }
@@ -1141,32 +1158,30 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
 
     var selectedRoleFilter by remember { mutableStateOf("All") }
     var selectedYearFilter by remember { mutableStateOf("All Years") }
-    var userList by remember { mutableStateOf(listOf<RegisteredUserData>()) }
+    var userList by remember { mutableStateOf(listOf<SupabaseUser>()) }
 
-    var userToEdit by remember { mutableStateOf<RegisteredUserData?>(null) }
-    var userToDelete by remember { mutableStateOf<RegisteredUserData?>(null) }
+    var userToEdit by remember { mutableStateOf<SupabaseUser?>(null) }
+    var userToDelete by remember { mutableStateOf<SupabaseUser?>(null) }
 
     val yearsList = listOf("1st Year", "2nd Year", "3rd Year", "4th Year")
 
-    LaunchedEffect(Unit) {
-        db.collection("users").addSnapshotListener { value, _ ->
-            if (value != null) {
-                val list = mutableListOf<RegisteredUserData>()
-                for (doc in value) {
-                    list.add(
-                        RegisteredUserData(
-                            uid = doc.id,
-                            name = doc.getString("name") ?: "",
-                            email = doc.getString("email") ?: "",
-                            role = doc.getString("role") ?: "",
-                            rollNo = doc.getString("rollNo") ?: "",
-                            year = doc.getString("year") ?: "1st Year"
-                        )
-                    )
+    fun loadUsers() {
+        scope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["users"]
+                        .select()
+                        .decodeList<SupabaseUser>()
                 }
                 userList = list
+            } catch (e: Exception) {
+                // handle
             }
         }
+    }
+
+    LaunchedEffect(Unit) {
+        loadUsers()
     }
 
     // EDIT USER DIALOG
@@ -1180,7 +1195,7 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
 
         AlertDialog(
             onDismissRequest = { userToEdit = null },
-            title = { Text("Edit Registered User") },
+            title = { Text("Edit Registered User (Supabase DB)") },
             text = {
                 Column {
                     OutlinedTextField(
@@ -1229,22 +1244,28 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                 Button(
                     onClick = {
                         isUpdating = true
-                        val updateMap = hashMapOf<String, Any>(
-                            "name" to editName.trim(),
-                            "email" to editEmail.trim().lowercase(),
-                            "rollNo" to if (user.role == "student") editRollNo.trim().uppercase() else "TEACHER",
-                            "year" to if (user.role == "student") editYear else "N/A"
-                        )
-                        db.collection("users").document(user.uid).update(updateMap)
-                            .addOnSuccessListener {
+                        scope.launch {
+                            try {
+                                val updatedUser = SupabaseUser(
+                                    uid = user.uid,
+                                    name = editName.trim(),
+                                    email = editEmail.trim().lowercase(),
+                                    role = user.role,
+                                    rollNo = if (user.role == "student") editRollNo.trim().uppercase() else "TEACHER",
+                                    year = if (user.role == "student") editYear else "N/A"
+                                )
+                                withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["users"].upsert(updatedUser)
+                                }
                                 isUpdating = false
                                 userToEdit = null
-                                Toast.makeText(context, "User profile updated in Firestore!", Toast.LENGTH_SHORT).show()
-                            }
-                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "User profile updated in Supabase!", Toast.LENGTH_SHORT).show()
+                                loadUsers()
+                            } catch (e: Exception) {
                                 isUpdating = false
                                 Toast.makeText(context, "Update failed: ${e.message}", Toast.LENGTH_LONG).show()
                             }
+                        }
                     },
                     enabled = !isUpdating
                 ) {
@@ -1263,18 +1284,22 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
         AlertDialog(
             onDismissRequest = { userToDelete = null },
             title = { Text("Delete Registered User") },
-            text = { Text("Are you sure you want to delete ${user.name} (${user.email}) from Firestore?") },
+            text = { Text("Are you sure you want to delete ${user.name} (${user.email}) from Supabase DB?") },
             confirmButton = {
                 Button(
                     onClick = {
-                        db.collection("users").document(user.uid).delete()
-                            .addOnSuccessListener {
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["users"].delete { filter { eq("uid", user.uid) } }
+                                }
                                 userToDelete = null
-                                Toast.makeText(context, "User deleted from Firestore!", Toast.LENGTH_SHORT).show()
-                            }
-                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "User deleted from Supabase DB!", Toast.LENGTH_SHORT).show()
+                                loadUsers()
+                            } catch (e: Exception) {
                                 Toast.makeText(context, "Delete failed: ${e.message}", Toast.LENGTH_LONG).show()
                             }
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                 ) {
@@ -1394,11 +1419,12 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                             year = regYear,
                             onSuccess = {
                                 isRegistering = false
-                                Toast.makeText(context, "New $regRole Registered Successfully!", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "New $regRole Registered Successfully in Supabase!", Toast.LENGTH_SHORT).show()
                                 regName = ""
                                 regEmail = ""
                                 regPassword = ""
                                 regRollNo = ""
+                                loadUsers()
                             },
                             onError = { err ->
                                 isRegistering = false
@@ -1422,7 +1448,6 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
     Text("Registered Users List (${userList.size})", fontWeight = FontWeight.Bold, fontSize = 18.sp)
     Spacer(modifier = Modifier.height(4.dp))
 
-    // Filter by Role
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1438,7 +1463,6 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
 
     Spacer(modifier = Modifier.height(4.dp))
 
-    // Filter by Year
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1524,7 +1548,7 @@ fun createNewUserByTeacher(
     onSuccess: () -> Unit,
     onError: (String) -> Unit
 ) {
-    val db = FirebaseFirestore.getInstance()
+    val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.Main)
     try {
         val appName = "RegistrationApp_${System.currentTimeMillis()}"
         val secondaryApp = FirebaseApp.initializeApp(context, FirebaseApp.getInstance().options, appName)
@@ -1535,29 +1559,33 @@ fun createNewUserByTeacher(
         secondaryAuth.createUserWithEmailAndPassword(cleanEmail, pass.trim())
             .addOnSuccessListener { result ->
                 val newUid = result.user!!.uid
-                val userMap = hashMapOf(
-                    "uid" to newUid,
-                    "name" to name.trim(),
-                    "email" to cleanEmail,
-                    "rollNo" to if (role == "student") rollNo.trim().uppercase() else "TEACHER",
-                    "role" to role,
-                    "year" to if (role == "student") year else "N/A"
+                val newUser = SupabaseUser(
+                    uid = newUid,
+                    name = name.trim(),
+                    email = cleanEmail,
+                    role = role,
+                    rollNo = if (role == "student") rollNo.trim().uppercase() else "TEACHER",
+                    year = if (role == "student") year else "N/A"
                 )
-                db.collection("users").document(newUid).set(userMap)
-                    .addOnSuccessListener {
+
+                scope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            SupabaseManager.client.postgrest["users"].upsert(newUser)
+                        }
                         secondaryAuth.signOut()
                         secondaryApp.delete()
                         onSuccess()
-                    }
-                    .addOnFailureListener { e ->
+                    } catch (e: Exception) {
                         secondaryAuth.signOut()
                         secondaryApp.delete()
-                        onError(e.message ?: "Failed to save user in database")
+                        onError(e.message ?: "Failed to save user in Supabase")
                     }
+                }
             }
             .addOnFailureListener { e ->
                 secondaryApp.delete()
-                onError(e.message ?: "Failed to create user account")
+                onError(e.message ?: "Failed to create user account in Firebase Auth")
             }
     } catch (e: Exception) {
         onError(e.message ?: "Error initializing user creation")
@@ -1574,10 +1602,10 @@ fun StudentDashboard(
     studentRollNo: String,
     onLogout: () -> Unit
 ) {
-    val db = FirebaseFirestore.getInstance()
+    val scope = rememberCoroutineScope()
 
-    var attendanceList by remember { mutableStateOf(listOf<Map<String, String>>()) }
-    var materialsList by remember { mutableStateOf(listOf<Map<String, String>>()) }
+    var attendanceList by remember { mutableStateOf(listOf<SupabaseAttendance>()) }
+    var materialsList by remember { mutableStateOf(listOf<SupabaseMaterial>()) }
     var selectedFilter by remember { mutableStateOf("All") }
     var isLoadingAttendance by remember { mutableStateOf(true) }
 
@@ -1585,41 +1613,33 @@ fun StudentDashboard(
 
     LaunchedEffect(studentRollNo) {
         if (studentRollNo.isNotBlank()) {
-            db.collection("attendance")
-                .whereEqualTo("rollNo", studentRollNo.trim())
-                .addSnapshotListener { value, _ ->
-                    isLoadingAttendance = false
-                    if (value != null) {
-                        val list = mutableListOf<Map<String, String>>()
-                        for (doc in value) {
-                            list.add(
-                                mapOf(
-                                    "date" to (doc.getString("date") ?: ""),
-                                    "subject" to (doc.getString("subject") ?: ""),
-                                    "status" to (doc.getString("status") ?: "")
-                                )
-                            )
-                        }
-                        attendanceList = list
+            scope.launch {
+                try {
+                    val list = withContext(Dispatchers.IO) {
+                        SupabaseManager.client.postgrest["attendance"]
+                            .select { filter { eq("rollNo", studentRollNo.trim()) } }
+                            .decodeList<SupabaseAttendance>()
                     }
+                    isLoadingAttendance = false
+                    attendanceList = list
+                } catch (e: Exception) {
+                    isLoadingAttendance = false
                 }
+            }
         } else {
             isLoadingAttendance = false
         }
 
-        db.collection("materials").addSnapshotListener { value, _ ->
-            if (value != null) {
-                val list = mutableListOf<Map<String, String>>()
-                for (doc in value) {
-                    list.add(
-                        mapOf(
-                            "category" to (doc.getString("category") ?: ""),
-                            "title" to (doc.getString("title") ?: ""),
-                            "description" to (doc.getString("description") ?: "")
-                        )
-                    )
+        scope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["materials"]
+                        .select()
+                        .decodeList<SupabaseMaterial>()
                 }
                 materialsList = list
+            } catch (e: Exception) {
+                // handle
             }
         }
     }
@@ -1654,8 +1674,8 @@ fun StudentDashboard(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 val totalClasses = attendanceList.size
-                val presentCount = attendanceList.count { it["status"] == "Present" }
-                val absentCount = attendanceList.count { it["status"] == "Absent" }
+                val presentCount = attendanceList.count { it.status == "Present" }
+                val absentCount = attendanceList.count { it.status == "Absent" }
                 val percentage = if (totalClasses > 0) (presentCount * 100) / totalClasses else 0
 
                 OutlinedCard(
@@ -1699,7 +1719,6 @@ fun StudentDashboard(
                     Text("No attendance records found yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     attendanceList.forEach { record ->
-                        val status = record["status"] ?: ""
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1713,15 +1732,15 @@ fun StudentDashboard(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(record["date"] ?: "", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Subject: ${record["subject"]}", fontSize = 13.sp)
+                                Text(record.date, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Subject: ${record.subject}", fontSize = 13.sp)
                             }
                             Surface(
                                 shape = RoundedCornerShape(6.dp),
-                                color = if (status == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
+                                color = if (record.status == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
                             ) {
                                 Text(
-                                    text = status.uppercase(),
+                                    text = record.status.uppercase(),
                                     color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -1757,7 +1776,7 @@ fun StudentDashboard(
         val filteredList = if (selectedFilter == "All") {
             materialsList
         } else {
-            materialsList.filter { it["category"] == selectedFilter }
+            materialsList.filter { it.category == selectedFilter }
         }
 
         if (filteredList.isEmpty()) {
@@ -1776,7 +1795,7 @@ fun StudentDashboard(
                             color = MaterialTheme.colorScheme.secondaryContainer
                         ) {
                             Text(
-                                text = (item["category"] ?: "").uppercase(),
+                                text = item.category.uppercase(),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1784,13 +1803,13 @@ fun StudentDashboard(
                         }
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = item["title"] ?: "",
+                            text = item.title,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = item["description"] ?: "",
+                            text = item.description,
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
