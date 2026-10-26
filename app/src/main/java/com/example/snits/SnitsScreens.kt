@@ -27,7 +27,7 @@ import java.util.Date
 import java.util.Locale
 
 // ==========================================
-// COMMON UI: PORTAL TOP HEADER
+// COMMON UI: ALIGNED PORTAL TOP HEADER
 // ==========================================
 @Composable
 fun PortalTopHeader(
@@ -98,96 +98,120 @@ fun PortalTopHeader(
         )
     }
 
-    Surface(
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 12.dp),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shadowElevation = 3.dp
+        elevation = CardDefaults.elevatedCardElevation(4.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .padding(14.dp)
         ) {
+            // ROW 1: Logo Badge + Title + Action Buttons
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f, fill = false)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(44.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = "SN",
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 18.sp
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = "SN",
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp
+                            )
+                        }
                     }
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column {
+                    Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = portalTitle,
-                        fontSize = 17.sp,
+                        fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = userName,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { showChangePasswordDialog = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Key,
+                            contentDescription = "Change Password",
+                            tint = MaterialTheme.colorScheme.primary
                         )
-                        if (userRoleOrRoll.isNotBlank()) {
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = MaterialTheme.colorScheme.surfaceTint.copy(alpha = 0.15f)
-                            ) {
-                                Text(
-                                    text = userRoleOrRoll,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+
+                    FilledTonalButton(
+                        onClick = onLogout,
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ExitToApp,
+                            contentDescription = "Logout",
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Logout", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { showChangePasswordDialog = true }) {
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // ROW 2: User Name & Role/Roll Badge Pill
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.Key,
-                        contentDescription = "Change Password",
-                        tint = MaterialTheme.colorScheme.primary
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = userName,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
-                FilledTonalButton(
-                    onClick = onLogout,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer,
-                        contentColor = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ExitToApp,
-                        contentDescription = "Logout",
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Logout", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                if (userRoleOrRoll.isNotBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = userRoleOrRoll,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
                 }
             }
         }
@@ -221,7 +245,6 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // College Logo Badge
             Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary,
@@ -322,7 +345,6 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                     val name = doc.getString("name") ?: "User"
                                                     onLoginSuccess(role, savedRoll, name)
                                                 } else {
-                                                    // Search profile by email
                                                     db.collection("users").whereEqualTo("email", cleanEmail).get()
                                                         .addOnSuccessListener { queryResult ->
                                                             isLoading = false
@@ -332,7 +354,6 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                                 val savedRoll = foundDoc.getString("rollNo") ?: ""
                                                                 val name = foundDoc.getString("name") ?: "User"
 
-                                                                // Non-blocking background sync of UID document
                                                                 val userMap = hashMapOf(
                                                                     "uid" to uid,
                                                                     "name" to name,
@@ -344,7 +365,6 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
 
                                                                 onLoginSuccess(role, savedRoll, name)
                                                             } else {
-                                                                // Default fallback profile if not found in Firestore
                                                                 val defaultRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
                                                                 val defaultRoll = cleanEmail.substringBefore("@").uppercase()
                                                                 val defaultName = cleanEmail.substringBefore("@").replace(".", " ")
@@ -432,7 +452,6 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
             .padding(12.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Properly Aligned Top Header Bar
         PortalTopHeader(
             portalTitle = "SNITS Teacher Panel",
             userName = teacherName,
@@ -440,7 +459,6 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
             onLogout = onLogout
         )
 
-        // Navigation Tabs
         PrimaryTabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { index, title ->
                 Tab(
@@ -511,7 +529,6 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
             }
     }
 
-    // 1. CLASS ATTENDANCE SHEET CARD
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -708,7 +725,6 @@ fun ClassAttendanceSection(db: FirebaseFirestore, context: android.content.Conte
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // 2. SEARCH & EDIT PAST ATTENDANCE
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -992,6 +1008,15 @@ fun MaterialsManagementSection(db: FirebaseFirestore, context: android.content.C
     }
 }
 
+// Data class for Registered User
+data class RegisteredUserData(
+    val uid: String,
+    val name: String,
+    val email: String,
+    val role: String,
+    val rollNo: String
+)
+
 // --- TEACHER TAB 2: REGISTER NEW STUDENT / TEACHER ---
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1004,25 +1029,130 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
     var isRegistering by remember { mutableStateOf(false) }
 
     var selectedFilter by remember { mutableStateOf("All") }
-    var userList by remember { mutableStateOf(listOf<Map<String, String>>()) }
+    var userList by remember { mutableStateOf(listOf<RegisteredUserData>()) }
+
+    var userToEdit by remember { mutableStateOf<RegisteredUserData?>(null) }
+    var userToDelete by remember { mutableStateOf<RegisteredUserData?>(null) }
 
     LaunchedEffect(Unit) {
         db.collection("users").addSnapshotListener { value, _ ->
             if (value != null) {
-                val list = mutableListOf<Map<String, String>>()
+                val list = mutableListOf<RegisteredUserData>()
                 for (doc in value) {
                     list.add(
-                        mapOf(
-                            "name" to (doc.getString("name") ?: ""),
-                            "email" to (doc.getString("email") ?: ""),
-                            "role" to (doc.getString("role") ?: ""),
-                            "rollNo" to (doc.getString("rollNo") ?: "")
+                        RegisteredUserData(
+                            uid = doc.id,
+                            name = doc.getString("name") ?: "",
+                            email = doc.getString("email") ?: "",
+                            role = doc.getString("role") ?: "",
+                            rollNo = doc.getString("rollNo") ?: ""
                         )
                     )
                 }
                 userList = list
             }
         }
+    }
+
+    // EDIT USER DIALOG
+    if (userToEdit != null) {
+        val user = userToEdit!!
+        var editName by remember { mutableStateOf(user.name) }
+        var editRollNo by remember { mutableStateOf(user.rollNo) }
+        var editEmail by remember { mutableStateOf(user.email) }
+        var isUpdating by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { userToEdit = null },
+            title = { Text("Edit Registered User") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editName,
+                        onValueChange = { editName = it },
+                        label = { Text("Full Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (user.role == "student") {
+                        OutlinedTextField(
+                            value = editRollNo,
+                            onValueChange = { editRollNo = it.uppercase() },
+                            label = { Text("Student Roll No") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    OutlinedTextField(
+                        value = editEmail,
+                        onValueChange = { editEmail = it },
+                        label = { Text("Email ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isUpdating = true
+                        val updateMap = hashMapOf<String, Any>(
+                            "name" to editName.trim(),
+                            "email" to editEmail.trim().lowercase(),
+                            "rollNo" to if (user.role == "student") editRollNo.trim().uppercase() else "TEACHER"
+                        )
+                        db.collection("users").document(user.uid).update(updateMap)
+                            .addOnSuccessListener {
+                                isUpdating = false
+                                userToEdit = null
+                                Toast.makeText(context, "User profile updated in Firestore!", Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener { e ->
+                                isUpdating = false
+                                Toast.makeText(context, "Update failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                    },
+                    enabled = !isUpdating
+                ) {
+                    if (isUpdating) CircularProgressIndicator(modifier = Modifier.size(16.dp)) else Text("Save Changes")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { userToEdit = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // DELETE USER DIALOG
+    if (userToDelete != null) {
+        val user = userToDelete!!
+        AlertDialog(
+            onDismissRequest = { userToDelete = null },
+            title = { Text("Delete Registered User") },
+            text = { Text("Are you sure you want to delete ${user.name} (${user.email}) from Firestore?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        db.collection("users").document(user.uid).delete()
+                            .addOnSuccessListener {
+                                userToDelete = null
+                                Toast.makeText(context, "User deleted from Firestore!", Toast.LENGTH_SHORT).show()
+                            }
+                            .addOnFailureListener { e ->
+                                Toast.makeText(context, "Delete failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete User")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { userToDelete = null }) { Text("Cancel") }
+            }
+        )
     }
 
     ElevatedCard(
@@ -1157,7 +1287,7 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
     val filteredUsers = if (selectedFilter == "All") {
         userList
     } else {
-        userList.filter { it["role"] == selectedFilter }
+        userList.filter { it.role == selectedFilter }
     }
 
     if (filteredUsers.isEmpty()) {
@@ -1170,28 +1300,42 @@ fun UserRegistrationSection(db: FirebaseFirestore, context: android.content.Cont
                     .padding(vertical = 4.dp),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(user["name"] ?: "", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (user["role"] == "teacher") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
-                        ) {
-                            Text(
-                                text = (user["role"] ?: "").uppercase(),
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(user.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (user.role == "teacher") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = user.role.uppercase(),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        Text("Email: ${user.email}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (user.role == "student") {
+                            Text("Roll No: ${user.rollNo}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                         }
                     }
-                    Text("Email: ${user["email"]}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (user["role"] == "student") {
-                        Text("Roll No: ${user["rollNo"]}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+
+                    Row {
+                        IconButton(onClick = { userToEdit = user }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit User", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { userToDelete = user }) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete User", tint = MaterialTheme.colorScheme.error)
+                        }
                     }
                 }
             }
@@ -1314,7 +1458,6 @@ fun StudentDashboard(
             .padding(12.dp)
             .verticalScroll(rememberScrollState())
     ) {
-        // Aligned Header
         PortalTopHeader(
             portalTitle = "SNITS Student Portal",
             userName = studentName,
@@ -1342,7 +1485,6 @@ fun StudentDashboard(
                 val absentCount = attendanceList.count { it["status"] == "Absent" }
                 val percentage = if (totalClasses > 0) (presentCount * 100) / totalClasses else 0
 
-                // Percentage Badge Card
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
