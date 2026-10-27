@@ -118,6 +118,7 @@ fun PortalTopHeader(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
+            // ROW 1: Header Brand Logo + Title on Left, Action Buttons Group on Right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -163,6 +164,7 @@ fun PortalTopHeader(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
+                // Action Buttons Group (Key Icon + Logout Button)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -204,6 +206,7 @@ fun PortalTopHeader(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            // ROW 2: Welcome User Profile Banner (Surface pill container)
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -436,7 +439,7 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                     }
                                                 }
                                             } catch (_: Exception) {
-                                                // Non-blocking fallback if Supabase DB query fails
+                                                // Non-blocking fallback
                                             } finally {
                                                 isLoading = false
                                                 onLoginSuccess(userRole, userRoll, userName)
@@ -537,7 +540,7 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
 }
 
 // --- TEACHER TAB 0: BATCH CLASS ATTENDANCE SHEET ---
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ClassAttendanceSection() {
     val context = LocalContext.current
@@ -546,6 +549,7 @@ fun ClassAttendanceSection() {
 
     var date by remember { mutableStateOf(todayDate) }
     var subject by remember { mutableStateOf("") }
+    var expandedSubjectDropdown by remember { mutableStateOf(false) }
     var selectedYearFilter by remember { mutableStateOf("All Years") }
     var isSaving by remember { mutableStateOf(false) }
 
@@ -556,10 +560,9 @@ fun ClassAttendanceSection() {
     var searchedRecords by remember { mutableStateOf(listOf<SupabaseAttendance>()) }
     var isSearching by remember { mutableStateOf(false) }
 
-    val subjectSuggestions = listOf("C", "C++", "Python", "Java", "DBMS", "Maths")
+    val subjectOptions = listOf("C", "C++", "Python", "Java", "DBMS", "Maths", "Physics", "Web Development")
     val yearOptions = listOf("All Years", "1st Year", "2nd Year", "3rd Year", "4th Year")
 
-    // Fetch registered students from Supabase
     fun loadStudents() {
         scope.launch {
             try {
@@ -574,9 +577,7 @@ fun ClassAttendanceSection() {
                         attendanceStatusMap[it.rollNo] = true
                     }
                 }
-            } catch (e: Exception) {
-                // handle silently or toast
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -602,7 +603,7 @@ fun ClassAttendanceSection() {
                 Text("Daily Class Attendance Sheet", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Filter by Year & select Subject to mark attendance easily in Supabase.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Select Year & Subject from dropdown to mark daily attendance.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(modifier = Modifier.height(14.dp))
 
@@ -637,34 +638,43 @@ fun ClassAttendanceSection() {
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            Text("2. Select or Type Subject Name:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            // Interactive Subject Dropdown Menu Field
+            Text("2. Subject Name (1-Click Dropdown):", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
-            FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+
+            ExposedDropdownMenuBox(
+                expanded = expandedSubjectDropdown,
+                onExpandedChange = { expandedSubjectDropdown = !expandedSubjectDropdown }
             ) {
-                subjectSuggestions.forEach { subj ->
-                    SuggestionChip(
-                        onClick = { subject = subj },
-                        label = { Text(subj, fontSize = 12.sp) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = if (subject == subj) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                OutlinedTextField(
+                    value = subject,
+                    onValueChange = { subject = it },
+                    label = { Text("Select or Type Subject Name") },
+                    leadingIcon = { Icon(Icons.Default.Book, contentDescription = "Subject") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSubjectDropdown) },
+                    modifier = Modifier
+                        .menuAnchor(MenuAnchorType.PrimaryEditable)
+                        .fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                ExposedDropdownMenu(
+                    expanded = expandedSubjectDropdown,
+                    onDismissRequest = { expandedSubjectDropdown = false }
+                ) {
+                    subjectOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option, fontSize = 14.sp) },
+                            onClick = {
+                                subject = option
+                                expandedSubjectDropdown = false
+                            }
                         )
-                    )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
-
-            OutlinedTextField(
-                value = subject,
-                onValueChange = { subject = it },
-                label = { Text("Subject Name") },
-                leadingIcon = { Icon(Icons.Default.Book, contentDescription = "Subject") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(10.dp)
-            )
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -843,26 +853,29 @@ fun ClassAttendanceSection() {
 
     Spacer(modifier = Modifier.height(16.dp))
 
+    // SECTION 2: ALL ATTENDANCE RECORDS (VIEW FULL ATTENDANCE & SEARCH)
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.elevatedCardElevation(3.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("2. Search & Edit Past Attendance (Supabase)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(8.dp))
+            Text("2. All Attendance Records", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Search by Roll No or click 'View Full Attendance' to load all records from database.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = filterRoll,
                     onValueChange = { filterRoll = it.uppercase() },
-                    label = { Text("Search by Roll No (e.g. 22CS01)") },
+                    label = { Text("Roll No (e.g. 22CS01)") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     shape = RoundedCornerShape(10.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
                 Button(
                     onClick = {
                         if (filterRoll.isBlank()) {
@@ -891,13 +904,55 @@ fun ClassAttendanceSection() {
                 }
             }
 
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // VIEW FULL ATTENDANCE BUTTON
+            FilledTonalButton(
+                onClick = {
+                    isSearching = true
+                    scope.launch {
+                        try {
+                            val records = withContext(Dispatchers.IO) {
+                                SupabaseManager.client.postgrest["attendance"]
+                                    .select()
+                                    .decodeList<SupabaseAttendance>()
+                            }
+                            isSearching = false
+                            searchedRecords = records
+                            Toast.makeText(context, "Loaded ${records.size} attendance records!", Toast.LENGTH_SHORT).show()
+                        } catch (e: Exception) {
+                            isSearching = false
+                            Toast.makeText(context, "Fetch Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.ListAlt, contentDescription = "Full Attendance")
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("View Full Attendance (All Database Records)", fontWeight = FontWeight.Bold)
+            }
+
             Spacer(modifier = Modifier.height(12.dp))
 
             if (isSearching) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else if (searchedRecords.isEmpty()) {
-                Text("Search box me Roll No daal kar purani attendance dekhein.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Click 'View Full Attendance' or search by Roll No to load attendance records.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Records Found:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Badge(containerColor = MaterialTheme.colorScheme.secondaryContainer) {
+                        Text("${searchedRecords.size} Records", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                    }
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+
                 searchedRecords.forEach { record ->
                     OutlinedCard(
                         modifier = Modifier
@@ -989,9 +1044,7 @@ fun MaterialsManagementSection() {
                         .decodeList<SupabaseMaterial>()
                 }
                 materialsList = list
-            } catch (e: Exception) {
-                // handle
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -1135,7 +1188,7 @@ fun MaterialsManagementSection() {
                                 }
                                 Toast.makeText(context, "Deleted!", Toast.LENGTH_SHORT).show()
                                 loadMaterials()
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 Toast.makeText(context, "Delete Error!", Toast.LENGTH_SHORT).show()
                             }
                         }
@@ -1181,9 +1234,7 @@ fun UserRegistrationSection() {
                         .decodeList<SupabaseUser>()
                 }
                 userList = list
-            } catch (e: Exception) {
-                // handle
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -1629,7 +1680,7 @@ fun StudentDashboard(
                     }
                     isLoadingAttendance = false
                     attendanceList = list
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     isLoadingAttendance = false
                 }
             }
@@ -1645,9 +1696,7 @@ fun StudentDashboard(
                         .decodeList<SupabaseMaterial>()
                 }
                 materialsList = list
-            } catch (e: Exception) {
-                // handle
-            }
+            } catch (_: Exception) {}
         }
     }
 
