@@ -1,5 +1,8 @@
 package com.example.snits
 
+import android.content.ContentValues
+import android.os.Environment
+import android.provider.MediaStore
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,6 +29,7 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -118,7 +122,6 @@ fun PortalTopHeader(
                 .fillMaxWidth()
                 .padding(16.dp)
         ) {
-            // ROW 1: Header Brand Logo + Title on Left, Action Buttons Group on Right
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -164,7 +167,6 @@ fun PortalTopHeader(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                // Action Buttons Group (Key Icon + Logout Button)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -206,7 +208,6 @@ fun PortalTopHeader(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // ROW 2: Welcome User Profile Banner (Surface pill container)
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
@@ -559,6 +560,7 @@ fun ClassAttendanceSection() {
     var filterRoll by remember { mutableStateOf("") }
     var searchedRecords by remember { mutableStateOf(listOf<SupabaseAttendance>()) }
     var isSearching by remember { mutableStateOf(false) }
+    var studentNameMap by remember { mutableStateOf(mapOf<String, String>()) }
 
     val subjectOptions = listOf("C", "C++", "Python", "Java", "DBMS", "Maths", "Physics", "Web Development")
     val yearOptions = listOf("All Years", "1st Year", "2nd Year", "3rd Year", "4th Year")
@@ -568,11 +570,17 @@ fun ClassAttendanceSection() {
             try {
                 val list = withContext(Dispatchers.IO) {
                     SupabaseManager.client.postgrest["users"]
-                        .select { filter { eq("role", "student") } }
+                        .select()
                         .decodeList<SupabaseUser>()
                 }
-                studentList = list.sortedBy { it.rollNo }
-                list.forEach {
+                val studentsOnly = list.filter { it.role == "student" }.sortedBy { it.rollNo }
+                studentList = studentsOnly
+
+                val nameMap = mutableMapOf<String, String>()
+                list.forEach { u -> nameMap[u.rollNo] = u.name }
+                studentNameMap = nameMap
+
+                studentsOnly.forEach {
                     if (!attendanceStatusMap.containsKey(it.rollNo)) {
                         attendanceStatusMap[it.rollNo] = true
                     }
@@ -853,7 +861,7 @@ fun ClassAttendanceSection() {
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    // SECTION 2: ALL ATTENDANCE RECORDS (VIEW FULL ATTENDANCE & SEARCH)
+    // SECTION 2: ALL ATTENDANCE RECORDS (VIEW FULL ATTENDANCE, EXPORT TO EXCEL/CSV & SEARCH)
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -862,7 +870,7 @@ fun ClassAttendanceSection() {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("2. All Attendance Records", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(modifier = Modifier.height(4.dp))
-            Text("Search by Roll No or click 'View Full Attendance' to load all records from database.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("View full attendance records, search by Roll No, or download report in Excel/CSV format.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             Spacer(modifier = Modifier.height(10.dp))
 
@@ -906,32 +914,63 @@ fun ClassAttendanceSection() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // VIEW FULL ATTENDANCE BUTTON
-            FilledTonalButton(
-                onClick = {
-                    isSearching = true
-                    scope.launch {
-                        try {
-                            val records = withContext(Dispatchers.IO) {
-                                SupabaseManager.client.postgrest["attendance"]
-                                    .select()
-                                    .decodeList<SupabaseAttendance>()
+            // VIEW FULL ATTENDANCE BUTTON & DOWNLOAD EXCEL/CSV REPORT BUTTON
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    onClick = {
+                        isSearching = true
+                        scope.launch {
+                            try {
+                                val records = withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["attendance"]
+                                        .select()
+                                        .decodeList<SupabaseAttendance>()
+                                }
+                                isSearching = false
+                                searchedRecords = records
+                                Toast.makeText(context, "Loaded ${records.size} attendance records!", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                isSearching = false
+                                Toast.makeText(context, "Fetch Error: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
-                            isSearching = false
-                            searchedRecords = records
-                            Toast.makeText(context, "Loaded ${records.size} attendance records!", Toast.LENGTH_SHORT).show()
-                        } catch (e: Exception) {
-                            isSearching = false
-                            Toast.makeText(context, "Fetch Error: ${e.message}", Toast.LENGTH_SHORT).show()
                         }
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Icon(Icons.Default.ListAlt, contentDescription = "Full Attendance")
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("View Full Attendance (All Database Records)", fontWeight = FontWeight.Bold)
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.ListAlt, contentDescription = "Full Attendance", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Full Attendance", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Button(
+                    onClick = {
+                        if (searchedRecords.isEmpty()) {
+                            // Auto-fetch all if list is empty then export
+                            scope.launch {
+                                try {
+                                    val records = withContext(Dispatchers.IO) {
+                                        SupabaseManager.client.postgrest["attendance"]
+                                            .select()
+                                            .decodeList<SupabaseAttendance>()
+                                    }
+                                    downloadAttendanceReport(context, records, studentNameMap)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Export Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else {
+                            downloadAttendanceReport(context, searchedRecords, studentNameMap)
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = "Download Excel", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Download Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -939,7 +978,7 @@ fun ClassAttendanceSection() {
             if (isSearching) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else if (searchedRecords.isEmpty()) {
-                Text("Click 'View Full Attendance' or search by Roll No to load attendance records.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Click 'Full Attendance' or search by Roll No to view/download records.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -968,11 +1007,13 @@ fun ClassAttendanceSection() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("${record.rollNo} | ${record.date}", fontWeight = FontWeight.Bold)
-                                Text("Subject: ${record.subject}", fontSize = 13.sp)
+                                val name = studentNameMap[record.rollNo] ?: ""
+                                Text("${record.rollNo} ${if (name.isNotBlank()) "($name)" else ""} | ${record.date}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                Text("Subject: ${record.subject} | Year: ${record.year}", fontSize = 12.sp)
                                 Text(
                                     text = "Status: ${record.status}",
                                     fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
                                     color = if (record.status == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
                                 )
                             }
@@ -989,7 +1030,7 @@ fun ClassAttendanceSection() {
                                                 if (it.docId == record.docId) updated else it
                                             }
                                             Toast.makeText(context, "Updated to $newStatus!", Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
+                                        } catch (_: Exception) {
                                             Toast.makeText(context, "Update error!", Toast.LENGTH_SHORT).show()
                                         }
                                     }
@@ -1005,7 +1046,7 @@ fun ClassAttendanceSection() {
                                             }
                                             searchedRecords = searchedRecords.filter { it.docId != record.docId }
                                             Toast.makeText(context, "Deleted!", Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
+                                        } catch (_: Exception) {
                                             Toast.makeText(context, "Delete error!", Toast.LENGTH_SHORT).show()
                                         }
                                     }
@@ -1018,6 +1059,55 @@ fun ClassAttendanceSection() {
                 }
             }
         }
+    }
+}
+
+// Download Attendance Sheet to CSV / Excel File
+fun downloadAttendanceReport(
+    context: android.content.Context,
+    attendanceList: List<SupabaseAttendance>,
+    studentMap: Map<String, String>
+) {
+    if (attendanceList.isEmpty()) {
+        Toast.makeText(context, "Pehle attendance records load karein!", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    try {
+        val fileName = "SNITS_Attendance_Report_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.csv"
+
+        val csvBuilder = StringBuilder()
+        csvBuilder.append("Roll No,Student Name,Date,Subject,Academic Year,Status\n")
+
+        for (item in attendanceList) {
+            val studentName = studentMap[item.rollNo] ?: "N/A"
+            csvBuilder.append("\"${item.rollNo}\",\"$studentName\",\"${item.date}\",\"${item.subject}\",\"${item.year}\",\"${item.status}\"\n")
+        }
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+                put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+
+            if (uri != null) {
+                resolver.openOutputStream(uri)?.use { output ->
+                    output.write(csvBuilder.toString().toByteArray())
+                }
+                Toast.makeText(context, "Excel/CSV Report Saved in Downloads: $fileName", Toast.LENGTH_LONG).show()
+            }
+        } else {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val file = File(downloadsDir, fileName)
+            file.writeText(csvBuilder.toString())
+            Toast.makeText(context, "Report Saved in Downloads: $fileName", Toast.LENGTH_LONG).show()
+        }
+    } catch (e: Exception) {
+        Toast.makeText(context, "Download Error: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
