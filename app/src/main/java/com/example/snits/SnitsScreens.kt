@@ -493,26 +493,33 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
 }
 
 // ==========================================
-// 2. TEACHER DASHBOARD
+// 2. TEACHER DASHBOARD (Adaptive & Responsive)
 // ==========================================
 @Composable
 fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Class Attendance", "Notes & Materials", "Register User")
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .verticalScroll(rememberScrollState())
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
     ) {
-        PortalTopHeader(
-            portalTitle = "SNITS Teacher Panel",
-            userName = teacherName,
-            userRoleOrRoll = "Teacher",
-            onLogout = onLogout
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            PortalTopHeader(
+                portalTitle = "SNITS Teacher Panel",
+                userName = teacherName,
+                userRoleOrRoll = "Teacher",
+                onLogout = onLogout
+            )
 
         PrimaryTabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { index, title ->
@@ -538,6 +545,7 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
             2 -> UserRegistrationSection()
         }
     }
+}
 }
 
 // --- TEACHER TAB 0: BATCH CLASS ATTENDANCE SHEET ---
@@ -1790,19 +1798,26 @@ fun StudentDashboard(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .verticalScroll(rememberScrollState())
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
     ) {
-        PortalTopHeader(
-            portalTitle = "SNITS Student Portal",
-            userName = studentName,
-            userRoleOrRoll = "Roll: $studentRollNo",
-            onLogout = onLogout
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            PortalTopHeader(
+                portalTitle = "SNITS Student Portal",
+                userName = studentName,
+                userRoleOrRoll = "Roll: $studentRollNo",
+                onLogout = onLogout
+            )
 
         // --- SECTION 1: MY ATTENDANCE SUMMARY ---
         ElevatedCard(
@@ -1964,4 +1979,5 @@ fun StudentDashboard(
             }
         }
     }
+}
 }
