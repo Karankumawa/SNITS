@@ -1556,7 +1556,7 @@ fun ClassAttendanceSection() {
     }
 }
 
-// Download Attendance Sheet to CSV / Excel File
+// Download Attendance Sheet to CSV / Excel File with System Notification & Tap to Open
 fun downloadAttendanceReport(
     context: android.content.Context,
     attendanceList: List<SupabaseAttendance>,
@@ -1578,28 +1578,76 @@ fun downloadAttendanceReport(
             csvBuilder.append("\"${item.rollNo}\",\"$studentName\",\"${item.date}\",\"${item.subject}\",\"${item.year}\",\"${item.status}\"\n")
         }
 
+        // Save locally in external files dir for FileProvider Intent
+        val reportsDir = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "Reports").apply { mkdirs() }
+        val localFile = File(reportsDir, fileName)
+        localFile.writeText(csvBuilder.toString())
+
+        // Save to public Downloads via MediaStore if available
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             val contentValues = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
                 put(MediaStore.MediaColumns.MIME_TYPE, "text/csv")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             }
-
             val resolver = context.contentResolver
             val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-
             if (uri != null) {
                 resolver.openOutputStream(uri)?.use { output ->
                     output.write(csvBuilder.toString().toByteArray())
                 }
-                Toast.makeText(context, "Excel/CSV Report Saved in Downloads: $fileName", Toast.LENGTH_LONG).show()
             }
-        } else {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(downloadsDir, fileName)
-            file.writeText(csvBuilder.toString())
-            Toast.makeText(context, "Report Saved in Downloads: $fileName", Toast.LENGTH_LONG).show()
         }
+
+        // Generate FileProvider Content URI to open in Excel / Sheets
+        val fileUri = androidx.core.content.FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            localFile
+        )
+
+        val openIntent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(fileUri, "text/csv")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            context,
+            0,
+            openIntent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Post System Notification
+        val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "snits_downloads_channel"
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                "Attendance Reports Download",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications for downloaded attendance reports"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("Download Successful 📊")
+            .setContentText("Attendance report saved ($fileName). Tap to open in Excel!")
+            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText("Attendance report saved ($fileName).\nTap this notification to open & view the report in Excel / Sheets."))
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(System.currentTimeMillis().toInt(), notification)
+
+        Toast.makeText(context, "Download Successful! Notification sent. Tap notification to open in Excel.", Toast.LENGTH_LONG).show()
+
     } catch (e: Exception) {
         Toast.makeText(context, "Download Error: ${e.message}", Toast.LENGTH_LONG).show()
     }
