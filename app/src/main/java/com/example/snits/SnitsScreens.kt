@@ -381,11 +381,7 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                         val uid = result.user!!.uid
 
                                         scope.launch {
-                                            var userRole = when {
-                                                cleanEmail.contains("admin") -> "admin"
-                                                cleanEmail.contains("teacher") -> "teacher"
-                                                else -> "student"
-                                            }
+                                            var userRole = "student"
                                             var userRoll = cleanEmail.substringBefore("@").uppercase()
                                             var userName = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
 
@@ -396,22 +392,7 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                         .decodeList<SupabaseUser>()
                                                 }
 
-                                                if (cleanEmail.contains("admin") || cleanEmail == "admin@gmail.com") {
-                                                    userRole = "admin"
-                                                    val adminUser = SupabaseUser(
-                                                        uid = uid,
-                                                        name = if (users.isNotEmpty()) users[0].name else userName,
-                                                        email = cleanEmail,
-                                                        role = "admin",
-                                                        rollNo = "ADMIN",
-                                                        year = "N/A"
-                                                    )
-                                                    try {
-                                                        withContext(Dispatchers.IO) {
-                                                            SupabaseManager.client.postgrest["users"].upsert(adminUser)
-                                                        }
-                                                    } catch (_: Exception) {}
-                                                } else if (users.isNotEmpty()) {
+                                                if (users.isNotEmpty()) {
                                                     val user = users[0]
                                                     userRole = user.role
                                                     userRoll = user.rollNo
@@ -443,12 +424,18 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                                             }
                                                         } catch (_: Exception) {}
                                                     } else {
+                                                        val derivedRole = when {
+                                                            cleanEmail.contains("admin") -> "admin"
+                                                            cleanEmail.contains("teacher") -> "teacher"
+                                                            else -> "student"
+                                                        }
+                                                        userRole = derivedRole
                                                         val newUser = SupabaseUser(
                                                             uid = uid,
                                                             name = userName,
                                                             email = cleanEmail,
                                                             role = userRole,
-                                                            rollNo = if (userRole == "student") userRoll else "TEACHER",
+                                                            rollNo = if (userRole == "student") userRoll else if (userRole == "admin") "ADMIN" else "TEACHER",
                                                             year = "1st Year"
                                                         )
                                                         try {

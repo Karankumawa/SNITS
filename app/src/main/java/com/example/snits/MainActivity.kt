@@ -30,12 +30,11 @@ class MainActivity : ComponentActivity() {
                     var studentRollNo by remember { mutableStateOf("") }
                     var userName by remember { mutableStateOf("") }
 
-                    // Persistent Session Check (Auto-Login)
+                    // Persistent Session Check (Dynamic Role Check from Supabase DB)
                     LaunchedEffect(Unit) {
                         val currentUser = FirebaseAuth.getInstance().currentUser
                         if (currentUser != null) {
                             try {
-                                val email = currentUser.email?.lowercase() ?: ""
                                 val users = withContext(Dispatchers.IO) {
                                     SupabaseManager.client.postgrest["users"]
                                         .select { filter { eq("uid", currentUser.uid) } }
@@ -45,16 +44,11 @@ class MainActivity : ComponentActivity() {
                                     val user = users[0]
                                     studentRollNo = user.rollNo
                                     userName = user.name
-                                    currentScreen = if (email.contains("admin") || user.role.lowercase() == "admin") {
-                                        "admin"
-                                    } else if (user.role.lowercase() == "teacher") {
-                                        "teacher"
-                                    } else {
-                                        "student"
+                                    currentScreen = when (user.role.lowercase().trim()) {
+                                        "admin" -> "admin"
+                                        "teacher" -> "teacher"
+                                        else -> "student"
                                     }
-                                } else if (email.contains("admin")) {
-                                    userName = "Admin"
-                                    currentScreen = "admin"
                                 } else {
                                     currentScreen = "auth"
                                 }
@@ -80,7 +74,7 @@ class MainActivity : ComponentActivity() {
                                 onLoginSuccess = { role, rollNo, name ->
                                     studentRollNo = rollNo
                                     userName = name
-                                    currentScreen = when (role.lowercase()) {
+                                    currentScreen = when (role.lowercase().trim()) {
                                         "admin" -> "admin"
                                         "teacher" -> "teacher"
                                         else -> "student"
