@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
                         val currentUser = FirebaseAuth.getInstance().currentUser
                         if (currentUser != null) {
                             try {
+                                val email = currentUser.email?.lowercase() ?: ""
                                 val users = withContext(Dispatchers.IO) {
                                     SupabaseManager.client.postgrest["users"]
                                         .select { filter { eq("uid", currentUser.uid) } }
@@ -44,11 +45,16 @@ class MainActivity : ComponentActivity() {
                                     val user = users[0]
                                     studentRollNo = user.rollNo
                                     userName = user.name
-                                    currentScreen = when (user.role.lowercase()) {
-                                        "admin" -> "admin"
-                                        "teacher" -> "teacher"
-                                        else -> "student"
+                                    currentScreen = if (email.contains("admin") || user.role.lowercase() == "admin") {
+                                        "admin"
+                                    } else if (user.role.lowercase() == "teacher") {
+                                        "teacher"
+                                    } else {
+                                        "student"
                                     }
+                                } else if (email.contains("admin")) {
+                                    userName = "Admin"
+                                    currentScreen = "admin"
                                 } else {
                                     currentScreen = "auth"
                                 }
