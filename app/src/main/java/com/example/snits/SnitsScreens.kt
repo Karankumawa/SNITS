@@ -34,6 +34,10 @@ import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1000,6 +1004,41 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
     }
 }
 
+// Helper function to fetch all attendance with 100% column name resilience
+suspend fun fetchAllAttendanceFromSupabase(): List<SupabaseAttendance> {
+    return withContext(Dispatchers.IO) {
+        val response = SupabaseManager.client.postgrest["attendance"].select()
+        val jsonArray = response.decodeList<JsonObject>()
+        jsonArray.map { obj ->
+            val docId = obj["docId"]?.jsonPrimitive?.contentOrNull
+                ?: obj["docid"]?.jsonPrimitive?.contentOrNull
+                ?: obj["id"]?.jsonPrimitive?.contentOrNull
+                ?: ""
+
+            val rollNo = obj["rollNo"]?.jsonPrimitive?.contentOrNull
+                ?: obj["rollno"]?.jsonPrimitive?.contentOrNull
+                ?: obj["roll_no"]?.jsonPrimitive?.contentOrNull
+                ?: ""
+
+            val date = obj["date"]?.jsonPrimitive?.contentOrNull ?: ""
+            val subject = obj["subject"]?.jsonPrimitive?.contentOrNull ?: ""
+            val status = obj["status"]?.jsonPrimitive?.contentOrNull ?: ""
+            val year = obj["year"]?.jsonPrimitive?.contentOrNull ?: "1st Year"
+            val timestamp = obj["timestamp"]?.jsonPrimitive?.longOrNull ?: System.currentTimeMillis()
+
+            SupabaseAttendance(
+                docId = docId,
+                rollNo = rollNo,
+                date = date,
+                subject = subject,
+                status = status,
+                year = year,
+                timestamp = timestamp
+            )
+        }
+    }
+}
+
 // --- CLASS ATTENDANCE SECTION ---
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -1350,13 +1389,13 @@ fun ClassAttendanceSection() {
                         isSearching = true
                         scope.launch {
                             try {
-                                val records = withContext(Dispatchers.IO) {
-                                    SupabaseManager.client.postgrest["attendance"]
-                                        .select { filter { eq("rollNo", filterRoll.trim()) } }
-                                        .decodeList<SupabaseAttendance>()
-                                }
+                                val allRecords = fetchAllAttendanceFromSupabase()
+                                val matched = allRecords.filter { it.rollNo.equals(filterRoll.trim(), ignoreCase = true) }
                                 isSearching = false
-                                searchedRecords = records
+                                searchedRecords = matched
+                                if (matched.isEmpty()) {
+                                    Toast.makeText(context, "Roll No ${filterRoll.trim()} ka koi record nahi mila!", Toast.LENGTH_SHORT).show()
+                                }
                             } catch (e: Exception) {
                                 isSearching = false
                                 Toast.makeText(context, "Search Error: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -1377,11 +1416,7 @@ fun ClassAttendanceSection() {
                         isSearching = true
                         scope.launch {
                             try {
-                                val records = withContext(Dispatchers.IO) {
-                                    SupabaseManager.client.postgrest["attendance"]
-                                        .select()
-                                        .decodeList<SupabaseAttendance>()
-                                }
+                                val records = fetchAllAttendanceFromSupabase()
                                 isSearching = false
                                 searchedRecords = records
                                 if (records.isEmpty()) {
@@ -1408,15 +1443,7 @@ fun ClassAttendanceSection() {
                         scope.launch {
                             try {
                                 isSearching = true
-                                val records = if (searchedRecords.isNotEmpty()) {
-                                    searchedRecords
-                                } else {
-                                    withContext(Dispatchers.IO) {
-                                        SupabaseManager.client.postgrest["attendance"]
-                                            .select()
-                                            .decodeList<SupabaseAttendance>()
-                                    }
-                                }
+                                val records = fetchAllAttendanceFromSupabase()
                                 isSearching = false
                                 searchedRecords = records
                                 if (records.isEmpty()) {
@@ -2628,11 +2655,7 @@ fun StudentDashboard(
         if (studentRollNo.isNotBlank()) {
             scope.launch {
                 try {
-                    val list = withContext(Dispatchers.IO) {
-                        SupabaseManager.client.postgrest["attendance"]
-                            .select { filter { eq("rollNo", studentRollNo.trim()) } }
-                            .decodeList<SupabaseAttendance>()
-                    }
+                    val list = fetchAllAttendanceFromSupabase().filter { it.rollNo.equals(studentRollNo.trim(), ignoreCase = true) }
                     isLoadingAttendance = false
                     attendanceList = list
                 } catch (_: Exception) {
