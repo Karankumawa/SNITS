@@ -1556,7 +1556,7 @@ fun ClassAttendanceSection() {
     }
 }
 
-// Download Attendance Sheet to CSV / Excel File with System Notification & Tap to Open
+// Download Attendance Sheet to CSV / Excel File with System Notification & Direct Open Action
 fun downloadAttendanceReport(
     context: android.content.Context,
     attendanceList: List<SupabaseAttendance>,
@@ -1565,6 +1565,18 @@ fun downloadAttendanceReport(
     if (attendanceList.isEmpty()) {
         Toast.makeText(context, "Pehle attendance records load karein!", Toast.LENGTH_SHORT).show()
         return
+    }
+
+    // Check & Request POST_NOTIFICATIONS runtime permission on Android 13+ (SDK 33+)
+    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+        val activity = context as? android.app.Activity
+        if (activity != null && androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            androidx.core.app.ActivityCompat.requestPermissions(
+                activity,
+                arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                101
+            )
+        }
     }
 
     try {
@@ -1619,6 +1631,13 @@ fun downloadAttendanceReport(
             android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Notification Action Button
+        val openAction = androidx.core.app.NotificationCompat.Action.Builder(
+            android.R.drawable.ic_menu_view,
+            "OPEN REPORT 📊",
+            pendingIntent
+        ).build()
+
         // Post System Notification
         val notificationManager = context.getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
         val channelId = "snits_downloads_channel"
@@ -1630,6 +1649,7 @@ fun downloadAttendanceReport(
                 android.app.NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Notifications for downloaded attendance reports"
+                enableVibration(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -1637,16 +1657,22 @@ fun downloadAttendanceReport(
         val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
             .setContentTitle("Download Successful 📊")
-            .setContentText("Attendance report saved ($fileName). Tap to open in Excel!")
-            .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText("Attendance report saved ($fileName).\nTap this notification to open & view the report in Excel / Sheets."))
-            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setContentText("Report saved ($fileName). Tap or click 'OPEN REPORT'.")
+            .setStyle(
+                androidx.core.app.NotificationCompat.BigTextStyle().bigText(
+                    "Attendance report saved ($fileName).\n\nTap this notification or click 'OPEN REPORT' below to open the file in Excel / Sheets."
+                )
+            )
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_MAX)
+            .setDefaults(androidx.core.app.NotificationCompat.DEFAULT_ALL)
             .setContentIntent(pendingIntent)
+            .addAction(openAction)
             .setAutoCancel(true)
             .build()
 
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
 
-        Toast.makeText(context, "Download Successful! Notification sent. Tap notification to open in Excel.", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Download Successful! Tap Notification or 'OPEN REPORT' to open in Excel.", Toast.LENGTH_LONG).show()
 
     } catch (e: Exception) {
         Toast.makeText(context, "Download Error: ${e.message}", Toast.LENGTH_LONG).show()
