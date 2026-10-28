@@ -35,6 +35,17 @@ data class SupabaseMaterial(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+@Serializable
+data class SupabaseTimetable(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val title: String,
+    val description: String,
+    @SerialName("targetYear") val targetYear: String = "All",
+    @SerialName("targetRole") val targetRole: String = "all",
+    @SerialName("rollNo") val rollNo: String = "ALL",
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 object SupabaseManager {
     const val URL = "https://uikexanjyiaarccbdjtq.supabase.co"
     const val ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVpa2V4YW5qeWlhYXJjY2JkanRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI5ODcxNjQsImV4cCI6MjEwODU2MzE2NH0.rfDIuazL1xGaq6nt-EBynqAgjWY-tka1-tQNwWS4FvU"

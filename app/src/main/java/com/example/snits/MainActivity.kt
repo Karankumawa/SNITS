@@ -44,11 +44,15 @@ class MainActivity : ComponentActivity() {
                                     val user = users[0]
                                     studentRollNo = user.rollNo
                                     userName = user.name
-                                    currentScreen = if (user.role == "teacher") "teacher" else "student"
+                                    currentScreen = when (user.role.lowercase()) {
+                                        "admin" -> "admin"
+                                        "teacher" -> "teacher"
+                                        else -> "student"
+                                    }
                                 } else {
                                     currentScreen = "auth"
                                 }
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                                 currentScreen = "auth"
                             }
                         } else {
@@ -70,7 +74,20 @@ class MainActivity : ComponentActivity() {
                                 onLoginSuccess = { role, rollNo, name ->
                                     studentRollNo = rollNo
                                     userName = name
-                                    currentScreen = if (role == "teacher") "teacher" else "student"
+                                    currentScreen = when (role.lowercase()) {
+                                        "admin" -> "admin"
+                                        "teacher" -> "teacher"
+                                        else -> "student"
+                                    }
+                                }
+                            )
+                        }
+                        "admin" -> {
+                            AdminDashboard(
+                                adminName = userName,
+                                onLogout = {
+                                    FirebaseAuth.getInstance().signOut()
+                                    currentScreen = "auth"
                                 }
                             )
                         }

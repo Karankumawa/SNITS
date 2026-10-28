@@ -262,7 +262,7 @@ fun PortalTopHeader(
 }
 
 // ==========================================
-// 1. AUTH SCREEN (Firebase Auth + Supabase User Sync)
+// 1. AUTH SCREEN (Firebase Auth + Supabase Sync)
 // ==========================================
 @Composable
 fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> Unit) {
@@ -381,7 +381,7 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                                         val uid = result.user!!.uid
 
                                         scope.launch {
-                                            var userRole = if (cleanEmail.contains("teacher")) "teacher" else "student"
+                                            var userRole = if (cleanEmail.contains("teacher")) "teacher" else if (cleanEmail.contains("admin")) "admin" else "student"
                                             var userRoll = cleanEmail.substringBefore("@").uppercase()
                                             var userName = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
 
@@ -493,12 +493,69 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
 }
 
 // ==========================================
-// 2. TEACHER DASHBOARD (Adaptive & Responsive)
+// 2. ADMIN DASHBOARD (Full Access + User Registration)
+// ==========================================
+@Composable
+fun AdminDashboard(adminName: String, onLogout: () -> Unit) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("Class Attendance", "Timetable", "Notes & Materials", "Register Users")
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.TopCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = 640.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            PortalTopHeader(
+                portalTitle = "SNITS Admin Panel",
+                userName = adminName,
+                userRoleOrRoll = "Admin",
+                onLogout = onLogout
+            )
+
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                text = title,
+                                fontSize = 11.sp,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            when (selectedTab) {
+                0 -> ClassAttendanceSection()
+                1 -> TimetableManagementSection()
+                2 -> MaterialsManagementSection()
+                3 -> UserRegistrationSection()
+            }
+        }
+    }
+}
+
+// ==========================================
+// 3. TEACHER DASHBOARD (Attendance, Teacher Timetable, Notes)
 // ==========================================
 @Composable
 fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Class Attendance", "Notes & Materials", "Register User")
+    val tabs = listOf("Class Attendance", "My Timetable", "Notes & Materials")
 
     Box(
         modifier = Modifier
@@ -521,34 +578,34 @@ fun TeacherDashboard(teacherName: String, onLogout: () -> Unit) {
                 onLogout = onLogout
             )
 
-        PrimaryTabRow(selectedTabIndex = selectedTab) {
-            tabs.forEachIndexed { index, title ->
-                Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
-                        Text(
-                            text = title,
-                            fontSize = 12.sp,
-                            fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium
-                        )
-                    }
-                )
+            PrimaryTabRow(selectedTabIndex = selectedTab) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
+                            Text(
+                                text = title,
+                                fontSize = 12.sp,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium
+                            )
+                        }
+                    )
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-        when (selectedTab) {
-            0 -> ClassAttendanceSection()
-            1 -> MaterialsManagementSection()
-            2 -> UserRegistrationSection()
+            when (selectedTab) {
+                0 -> ClassAttendanceSection()
+                1 -> TeacherTimetableSection()
+                2 -> MaterialsManagementSection()
+            }
         }
     }
 }
-}
 
-// --- TEACHER TAB 0: BATCH CLASS ATTENDANCE SHEET ---
+// --- CLASS ATTENDANCE SECTION ---
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun ClassAttendanceSection() {
@@ -568,7 +625,7 @@ fun ClassAttendanceSection() {
     var filterRoll by remember { mutableStateOf("") }
     var searchedRecords by remember { mutableStateOf(listOf<SupabaseAttendance>()) }
     var isSearching by remember { mutableStateOf(false) }
-    var studentNameMap by remember { mutableStateOf(mapOf<String, String>()) }
+    val studentNameMap = remember { mutableStateMapOf<String, String>() }
 
     val subjectOptions = listOf("C", "C++", "Python", "Java", "DBMS", "Maths", "Physics", "Web Development")
     val yearOptions = listOf("All Years", "1st Year", "2nd Year", "3rd Year", "4th Year")
@@ -584,9 +641,7 @@ fun ClassAttendanceSection() {
                 val studentsOnly = list.filter { it.role == "student" }.sortedBy { it.rollNo }
                 studentList = studentsOnly
 
-                val nameMap = mutableMapOf<String, String>()
-                list.forEach { u -> nameMap[u.rollNo] = u.name }
-                studentNameMap = nameMap
+                list.forEach { u -> studentNameMap[u.rollNo] = u.name }
 
                 studentsOnly.forEach {
                     if (!attendanceStatusMap.containsKey(it.rollNo)) {
@@ -654,7 +709,6 @@ fun ClassAttendanceSection() {
             )
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Interactive Subject Dropdown Menu Field
             Text("2. Subject Name (1-Click Dropdown):", fontSize = 13.sp, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -922,7 +976,6 @@ fun ClassAttendanceSection() {
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // VIEW FULL ATTENDANCE BUTTON & DOWNLOAD EXCEL/CSV REPORT BUTTON
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(
                     onClick = {
@@ -954,7 +1007,6 @@ fun ClassAttendanceSection() {
                 Button(
                     onClick = {
                         if (searchedRecords.isEmpty()) {
-                            // Auto-fetch all if list is empty then export
                             scope.launch {
                                 try {
                                     val records = withContext(Dispatchers.IO) {
@@ -1119,7 +1171,405 @@ fun downloadAttendanceReport(
     }
 }
 
-// --- TEACHER TAB 1: NOTES, TIMETABLE & MATERIALS MANAGEMENT ---
+// --- TIMETABLE MANAGEMENT SECTION (ADMIN) ---
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun TimetableManagementSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var title by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var targetYear by remember { mutableStateOf("1st Year") }
+    var targetRole by remember { mutableStateOf("student") }
+    var rollNo by remember { mutableStateOf("ALL") }
+
+    var timetableList by remember { mutableStateOf(listOf<SupabaseTimetable>()) }
+    var isPublishing by remember { mutableStateOf(false) }
+
+    var selectedYearFilter by remember { mutableStateOf("All") }
+
+    val yearOptions = listOf("1st Year", "2nd Year", "3rd Year", "4th Year", "Teachers", "All")
+
+    fun loadTimetables() {
+        scope.launch {
+            try {
+                val list = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["timetables"]
+                        .select()
+                        .decodeList<SupabaseTimetable>()
+                }
+                timetableList = list.sortedByDescending { it.timestamp }
+            } catch (_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        loadTimetables()
+    }
+
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.elevatedCardElevation(4.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Publish College Timetable / Schedule", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text("Publish year-wise student timetables or teacher schedules stored in Supabase DB.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Text("Select Target Group / Year:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(4.dp))
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                yearOptions.forEach { yr ->
+                    FilterChip(
+                        selected = targetYear == yr,
+                        onClick = {
+                            targetYear = yr
+                            targetRole = if (yr == "Teachers") "teacher" else "student"
+                        },
+                        label = { Text(yr, fontSize = 12.sp) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Timetable Title (e.g. 1st Year CS Weekly Schedule)") },
+                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = "Schedule") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Timetable Details / Subject Hours / PDF Drive Link") },
+                leadingIcon = { Icon(Icons.Default.Description, contentDescription = "Details") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                shape = RoundedCornerShape(10.dp)
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedTextField(
+                value = rollNo,
+                onValueChange = { rollNo = it.uppercase() },
+                label = { Text("Target Roll No ('ALL' or specific Roll No)") },
+                leadingIcon = { Icon(Icons.Default.Badge, contentDescription = "Roll") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = RoundedCornerShape(10.dp)
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (isPublishing) {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+            } else {
+                Button(
+                    onClick = {
+                        if (title.isBlank() || description.isBlank()) {
+                            Toast.makeText(context, "Title aur Description dono bharein!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        isPublishing = true
+                        scope.launch {
+                            try {
+                                val newTt = SupabaseTimetable(
+                                    id = UUID.randomUUID().toString(),
+                                    title = title.trim(),
+                                    description = description.trim(),
+                                    targetYear = targetYear,
+                                    targetRole = targetRole,
+                                    rollNo = if (rollNo.isBlank()) "ALL" else rollNo.trim().uppercase(),
+                                    timestamp = System.currentTimeMillis()
+                                )
+                                withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["timetables"].insert(newTt)
+                                }
+                                isPublishing = false
+                                title = ""
+                                description = ""
+                                rollNo = "ALL"
+                                Toast.makeText(context, "Timetable Published Successfully!", Toast.LENGTH_SHORT).show()
+                                loadTimetables()
+                            } catch (e: Exception) {
+                                isPublishing = false
+                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Publish, contentDescription = "Publish")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Publish Timetable", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text("Full Database Timetables (${timetableList.size})", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    Spacer(modifier = Modifier.height(4.dp))
+
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        (listOf("All") + yearOptions).distinct().forEach { yr ->
+            FilterChip(
+                selected = selectedYearFilter == yr,
+                onClick = { selectedYearFilter = yr },
+                label = { Text(yr, fontSize = 11.sp) }
+            )
+        }
+    }
+
+    val filteredList = if (selectedYearFilter == "All") {
+        timetableList
+    } else {
+        timetableList.filter { it.targetYear == selectedYearFilter }
+    }
+
+    Spacer(modifier = Modifier.height(6.dp))
+
+    if (filteredList.isEmpty()) {
+        Text("No timetables found in database.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    } else {
+        filteredList.forEach { item ->
+            OutlinedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer
+                            ) {
+                                Text(
+                                    text = item.targetYear,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            if (item.rollNo != "ALL") {
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                ) {
+                                    Text(
+                                        text = "Roll: ${item.rollNo}",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Text(item.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+
+                    IconButton(
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    withContext(Dispatchers.IO) {
+                                        SupabaseManager.client.postgrest["timetables"].delete { filter { eq("id", item.id) } }
+                                    }
+                                    Toast.makeText(context, "Timetable Deleted!", Toast.LENGTH_SHORT).show()
+                                    loadTimetables()
+                                } catch (_: Exception) {
+                                    Toast.makeText(context, "Delete error!", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- TEACHER TIMETABLE SECTION ---
+@Composable
+fun TeacherTimetableSection() {
+    val scope = rememberCoroutineScope()
+    var teacherTimetables by remember { mutableStateOf(listOf<SupabaseTimetable>()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        scope.launch {
+            try {
+                val allTt = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["timetables"]
+                        .select()
+                        .decodeList<SupabaseTimetable>()
+                }
+                teacherTimetables = allTt.filter {
+                    it.targetYear == "Teachers" || it.targetRole == "teacher" || it.targetYear == "All"
+                }
+                isLoading = false
+            } catch (_: Exception) {
+                isLoading = false
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text("Teacher Schedule & Timetable", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+        } else if (teacherTimetables.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("No teacher schedule published in database yet.", fontSize = 13.sp, modifier = Modifier.padding(12.dp))
+            }
+        } else {
+            teacherTimetables.forEach { item ->
+                OutlinedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(item.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- STUDENT TIMETABLE SECTION ---
+@Composable
+fun StudentTimetableSection(studentRollNo: String) {
+    val scope = rememberCoroutineScope()
+    var studentYear by remember { mutableStateOf("1st Year") }
+    var studentTimetables by remember { mutableStateOf(listOf<SupabaseTimetable>()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(studentRollNo) {
+        scope.launch {
+            try {
+                val users = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["users"]
+                        .select { filter { eq("rollNo", studentRollNo) } }
+                        .decodeList<SupabaseUser>()
+                }
+                if (users.isNotEmpty()) {
+                    studentYear = users[0].year
+                }
+
+                val allTt = withContext(Dispatchers.IO) {
+                    SupabaseManager.client.postgrest["timetables"]
+                        .select()
+                        .decodeList<SupabaseTimetable>()
+                }
+
+                val myTt = allTt.filter {
+                    it.targetYear == studentYear ||
+                    it.targetYear == "All" ||
+                    it.rollNo == studentRollNo ||
+                    it.rollNo == "ALL"
+                }
+
+                isLoading = false
+                studentTimetables = myTt
+            } catch (_: Exception) {
+                isLoading = false
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("My Class Timetable ($studentYear)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Badge(containerColor = MaterialTheme.colorScheme.primaryContainer) {
+                Text(studentYear, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (isLoading) {
+            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+        } else if (studentTimetables.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "No timetable published for $studentYear yet.",
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+        } else {
+            studentTimetables.forEach { item ->
+                OutlinedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Event, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(item.description, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- TEACHER TAB 1: NOTES, ASSIGNMENTS & MATERIALS MANAGEMENT ---
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MaterialsManagementSection() {
@@ -1131,7 +1581,7 @@ fun MaterialsManagementSection() {
     var description by remember { mutableStateOf("") }
     var materialsList by remember { mutableStateOf(listOf<SupabaseMaterial>()) }
 
-    val categories = listOf("Notes", "Timetable", "Assignment", "Daily Activity")
+    val categories = listOf("Notes", "Assignment", "Daily Activity")
 
     fun loadMaterials() {
         scope.launch {
@@ -1156,7 +1606,7 @@ fun MaterialsManagementSection() {
         elevation = CardDefaults.elevatedCardElevation(4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Publish College Update / Notes / Timetable", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Publish College Notes & Assignments", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(modifier = Modifier.height(8.dp))
 
             Text("Select Category:", fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -1191,7 +1641,7 @@ fun MaterialsManagementSection() {
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it },
-                label = { Text("Details / Google Drive PDF Link / Timings") },
+                label = { Text("Details / Google Drive PDF Link / Instructions") },
                 leadingIcon = { Icon(Icons.Default.Description, contentDescription = "Details") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
@@ -1238,7 +1688,7 @@ fun MaterialsManagementSection() {
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    Text("Manage Published Content (Supabase)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+    Text("Manage Published Notes & Assignments", fontWeight = FontWeight.Bold, fontSize = 18.sp)
     Spacer(modifier = Modifier.height(4.dp))
 
     if (materialsList.isEmpty()) {
@@ -1299,7 +1749,7 @@ fun MaterialsManagementSection() {
     }
 }
 
-// --- TEACHER TAB 2: REGISTER NEW STUDENT / TEACHER ---
+// --- USER REGISTRATION SECTION (RESTRICTED TO ADMIN ONLY) ---
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun UserRegistrationSection() {
@@ -1474,7 +1924,7 @@ fun UserRegistrationSection() {
         elevation = CardDefaults.elevatedCardElevation(4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Text("Register New Student / Teacher", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text("Register New Student / Teacher (Admin Only)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Spacer(modifier = Modifier.height(12.dp))
 
             OutlinedTextField(
@@ -1667,7 +2117,7 @@ fun UserRegistrationSection() {
                             ) {
                                 Text(
                                     text = user.role.uppercase(),
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1749,7 +2199,7 @@ fun createNewUserByTeacher(
 }
 
 // ==========================================
-// 3. STUDENT DASHBOARD
+// 4. STUDENT DASHBOARD
 // ==========================================
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -1765,7 +2215,7 @@ fun StudentDashboard(
     var selectedFilter by remember { mutableStateOf("All") }
     var isLoadingAttendance by remember { mutableStateOf(true) }
 
-    val filters = listOf("All", "Notes", "Timetable", "Assignment", "Daily Activity")
+    val filters = listOf("All", "Notes", "Assignment", "Daily Activity")
 
     LaunchedEffect(studentRollNo) {
         if (studentRollNo.isNotBlank()) {
@@ -1819,165 +2269,177 @@ fun StudentDashboard(
                 onLogout = onLogout
             )
 
-        // --- SECTION 1: MY ATTENDANCE SUMMARY ---
-        ElevatedCard(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            elevation = CardDefaults.elevatedCardElevation(4.dp)
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Assessment, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("My Daily Attendance Summary", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                val totalClasses = attendanceList.size
-                val presentCount = attendanceList.count { it.status == "Present" }
-                val absentCount = attendanceList.count { it.status == "Absent" }
-                val percentage = if (totalClasses > 0) (presentCount * 100) / totalClasses else 0
-
-                OutlinedCard(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.outlinedCardColors(
-                        containerColor = if (percentage >= 75) Color(0xFFF1F8E9) else Color(0xFFFFEBEE)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Overall Attendance Rate", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(
-                                text = "$percentage%",
-                                fontSize = 28.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (percentage >= 75) Color(0xFF2E7D32) else Color(0xFFC62828)
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("Total Classes: $totalClasses", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            Text("Present: $presentCount", fontSize = 13.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                            Text("Absent: $absentCount", fontSize = 13.sp, color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
-                        }
+            // --- SECTION 1: MY ATTENDANCE SUMMARY ---
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.elevatedCardElevation(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Assessment, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("My Daily Attendance Summary", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     }
-                }
 
-                Spacer(modifier = Modifier.height(14.dp))
-                Text("Detailed Attendance Records:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                if (isLoadingAttendance) {
-                    CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                } else if (attendanceList.isEmpty()) {
-                    Text("No attendance records found yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    attendanceList.forEach { record ->
+                    val totalClasses = attendanceList.size
+                    val presentCount = attendanceList.count { it.status == "Present" }
+                    val absentCount = attendanceList.count { it.status == "Absent" }
+                    val percentage = if (totalClasses > 0) (presentCount * 100) / totalClasses else 0
+
+                    OutlinedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.outlinedCardColors(
+                            containerColor = if (percentage >= 75) Color(0xFFF1F8E9) else Color(0xFFFFEBEE)
+                        )
+                    ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .background(
-                                    color = MaterialTheme.colorScheme.surfaceVariant,
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .padding(12.dp),
+                                .padding(14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column {
-                                Text(record.date, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                Text("Subject: ${record.subject}", fontSize = 13.sp)
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = if (record.status == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
-                            ) {
+                                Text("Overall Attendance Rate", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(
-                                    text = record.status.uppercase(),
-                                    color = Color.White,
-                                    fontSize = 11.sp,
+                                    text = "$percentage%",
+                                    fontSize = 28.sp,
                                     fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    color = if (percentage >= 75) Color(0xFF2E7D32) else Color(0xFFC62828)
                                 )
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Total Classes: $totalClasses", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Text("Present: $presentCount", fontSize = 13.sp, color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                                Text("Absent: $absentCount", fontSize = 13.sp, color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text("Detailed Attendance Records:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (isLoadingAttendance) {
+                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    } else if (attendanceList.isEmpty()) {
+                        Text("No attendance records found yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        attendanceList.forEach { record ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp)
+                                    .background(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = RoundedCornerShape(10.dp)
+                                    )
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(record.date, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text("Subject: ${record.subject}", fontSize = 13.sp)
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (record.status == "Present") Color(0xFF2E7D32) else Color(0xFFC62828)
+                                ) {
+                                    Text(
+                                        text = record.status.uppercase(),
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // --- SECTION 2: VIEW NOTES, TIMETABLE, ASSIGNMENTS & ACTIVITIES ---
-        Spacer(modifier = Modifier.height(16.dp))
-        Text("College Notes, Timetable & Updates", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-        Spacer(modifier = Modifier.height(6.dp))
-
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            filters.forEach { filter ->
-                FilterChip(
-                    selected = selectedFilter == filter,
-                    onClick = { selectedFilter = filter },
-                    label = { Text(filter, fontSize = 12.sp) }
-                )
+            // --- SECTION 2: MY CLASS TIMETABLE ---
+            Spacer(modifier = Modifier.height(16.dp))
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.elevatedCardElevation(4.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    StudentTimetableSection(studentRollNo = studentRollNo)
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(6.dp))
+            // --- SECTION 3: VIEW NOTES, ASSIGNMENTS & ACTIVITIES ---
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("College Notes & Assignments", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Spacer(modifier = Modifier.height(6.dp))
 
-        val filteredList = if (selectedFilter == "All") {
-            materialsList
-        } else {
-            materialsList.filter { it.category == selectedFilter }
-        }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                filters.forEach { filter ->
+                    FilterChip(
+                        selected = selectedFilter == filter,
+                        onClick = { selectedFilter = filter },
+                        label = { Text(filter, fontSize = 12.sp) }
+                    )
+                }
+            }
 
-        if (filteredList.isEmpty()) {
-            Text("No $selectedFilter available currently.", modifier = Modifier.padding(8.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            filteredList.forEach { item ->
-                OutlinedCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Surface(
-                            shape = RoundedCornerShape(6.dp),
-                            color = MaterialTheme.colorScheme.secondaryContainer
-                        ) {
+            Spacer(modifier = Modifier.height(6.dp))
+
+            val filteredList = if (selectedFilter == "All") {
+                materialsList
+            } else {
+                materialsList.filter { it.category == selectedFilter }
+            }
+
+            if (filteredList.isEmpty()) {
+                Text("No $selectedFilter available currently.", modifier = Modifier.padding(8.dp), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                filteredList.forEach { item ->
+                    OutlinedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.secondaryContainer
+                            ) {
+                                Text(
+                                    text = item.category.uppercase(),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = item.category.uppercase(),
-                                fontSize = 10.sp,
+                                text = item.title,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                fontSize = 15.sp
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = item.description,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = item.title,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = item.description,
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
                     }
                 }
             }
         }
     }
-}
 }
