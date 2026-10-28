@@ -7,21 +7,21 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class SupabaseUser(
-    val uid: String,
-    val name: String,
-    val email: String,
-    val role: String,
+    val uid: String = "",
+    val name: String = "",
+    val email: String = "",
+    val role: String = "",
     @SerialName("rollNo") val rollNo: String = "",
     val year: String = "1st Year"
 )
 
 @Serializable
 data class SupabaseAttendance(
-    @SerialName("docId") val docId: String,
-    @SerialName("rollNo") val rollNo: String,
-    val date: String,
-    val subject: String,
-    val status: String,
+    @SerialName("docId") val docId: String = "",
+    @SerialName("rollNo") val rollNo: String = "",
+    val date: String = "",
+    val subject: String = "",
+    val status: String = "",
     val year: String = "1st Year",
     val timestamp: Long = System.currentTimeMillis()
 )
@@ -29,17 +29,17 @@ data class SupabaseAttendance(
 @Serializable
 data class SupabaseMaterial(
     val id: String = java.util.UUID.randomUUID().toString(),
-    val category: String,
-    val title: String,
-    val description: String,
+    val category: String = "",
+    val title: String = "",
+    val description: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 
 @Serializable
 data class SupabaseTimetable(
     val id: String = java.util.UUID.randomUUID().toString(),
-    val title: String,
-    val description: String,
+    val title: String = "",
+    val description: String = "",
     @SerialName("targetYear") val targetYear: String = "All",
     @SerialName("targetRole") val targetRole: String = "all",
     @SerialName("rollNo") val rollNo: String = "ALL",

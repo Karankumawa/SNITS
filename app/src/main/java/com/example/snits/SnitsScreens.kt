@@ -1384,10 +1384,14 @@ fun ClassAttendanceSection() {
                                 }
                                 isSearching = false
                                 searchedRecords = records
-                                Toast.makeText(context, "Loaded ${records.size} attendance records!", Toast.LENGTH_SHORT).show()
+                                if (records.isEmpty()) {
+                                    Toast.makeText(context, "Database me abhi koi attendance record nahi hai!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    Toast.makeText(context, "Database se ${records.size} attendance records load hue!", Toast.LENGTH_SHORT).show()
+                                }
                             } catch (e: Exception) {
                                 isSearching = false
-                                Toast.makeText(context, "Fetch Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Fetch Error: ${e.message}", Toast.LENGTH_LONG).show()
                             }
                         }
                     },
@@ -1401,21 +1405,29 @@ fun ClassAttendanceSection() {
 
                 Button(
                     onClick = {
-                        if (searchedRecords.isEmpty()) {
-                            scope.launch {
-                                try {
-                                    val records = withContext(Dispatchers.IO) {
+                        scope.launch {
+                            try {
+                                isSearching = true
+                                val records = if (searchedRecords.isNotEmpty()) {
+                                    searchedRecords
+                                } else {
+                                    withContext(Dispatchers.IO) {
                                         SupabaseManager.client.postgrest["attendance"]
                                             .select()
                                             .decodeList<SupabaseAttendance>()
                                     }
-                                    downloadAttendanceReport(context, records, studentNameMap)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Export Error: ${e.message}", Toast.LENGTH_SHORT).show()
                                 }
+                                isSearching = false
+                                searchedRecords = records
+                                if (records.isEmpty()) {
+                                    Toast.makeText(context, "Database me export karne ke liye koi attendance record nahi h!", Toast.LENGTH_LONG).show()
+                                } else {
+                                    downloadAttendanceReport(context, records, studentNameMap)
+                                }
+                            } catch (e: Exception) {
+                                isSearching = false
+                                Toast.makeText(context, "Export Error: ${e.message}", Toast.LENGTH_LONG).show()
                             }
-                        } else {
-                            downloadAttendanceReport(context, searchedRecords, studentNameMap)
                         }
                     },
                     modifier = Modifier.weight(1f),
