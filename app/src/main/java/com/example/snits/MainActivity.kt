@@ -1,5 +1,6 @@
 package com.example.snits
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,6 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.example.snits.ui.theme.SNITSTheme
 import com.google.firebase.auth.FirebaseAuth
 import io.github.jan.supabase.postgrest.postgrest
@@ -26,41 +28,56 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    var currentScreen by remember { mutableStateOf("splash") }
+                    val context = LocalContext.current
+                    val prefs = remember { context.getSharedPreferences("snits_app_prefs", Context.MODE_PRIVATE) }
+                    var isFirstRun by remember { mutableStateOf(prefs.getBoolean("is_first_run", true)) }
+
+                    var currentScreen by remember { mutableStateOf(if (isFirstRun) "intro" else "splash") }
                     var studentRollNo by remember { mutableStateOf("") }
                     var userName by remember { mutableStateOf("") }
 
                     // Persistent Session Check (Dynamic Role Check from Supabase DB)
-                    LaunchedEffect(Unit) {
-                        val currentUser = FirebaseAuth.getInstance().currentUser
-                        if (currentUser != null) {
-                            try {
-                                val users = withContext(Dispatchers.IO) {
-                                    SupabaseManager.client.postgrest["users"]
-                                        .select { filter { eq("uid", currentUser.uid) } }
-                                        .decodeList<SupabaseUser>()
-                                }
-                                if (users.isNotEmpty()) {
-                                    val user = users[0]
-                                    studentRollNo = user.rollNo
-                                    userName = user.name
-                                    currentScreen = when (user.role.lowercase().trim()) {
-                                        "admin" -> "admin"
-                                        "teacher" -> "teacher"
-                                        else -> "student"
+                    LaunchedEffect(currentScreen) {
+                        if (currentScreen == "splash") {
+                            val currentUser = FirebaseAuth.getInstance().currentUser
+                            if (currentUser != null) {
+                                try {
+                                    val users = withContext(Dispatchers.IO) {
+                                        SupabaseManager.client.postgrest["users"]
+                                            .select { filter { eq("uid", currentUser.uid) } }
+                                            .decodeList<SupabaseUser>()
                                     }
-                                } else {
+                                    if (users.isNotEmpty()) {
+                                        val user = users[0]
+                                        studentRollNo = user.rollNo
+                                        userName = user.name
+                                        currentScreen = when (user.role.lowercase().trim()) {
+                                            "admin" -> "admin"
+                                            "teacher" -> "teacher"
+                                            else -> "student"
+                                        }
+                                    } else {
+                                        currentScreen = "auth"
+                                    }
+                                } catch (_: Exception) {
                                     currentScreen = "auth"
                                 }
-                            } catch (_: Exception) {
+                            } else {
                                 currentScreen = "auth"
                             }
-                        } else {
-                            currentScreen = "auth"
                         }
                     }
 
                     when (currentScreen) {
+                        "intro" -> {
+                            AppIntroScreen(
+                                onFinishIntro = {
+                                    prefs.edit().putBoolean("is_first_run", false).apply()
+                                    isFirstRun = false
+                                    currentScreen = "splash"
+                                }
+                            )
+                        }
                         "splash" -> {
                             Box(
                                 modifier = Modifier.fillMaxSize(),

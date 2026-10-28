@@ -42,6 +42,187 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 // ==========================================
+// 0. APP INTRO / ONBOARDING SCREEN (First Time Launch)
+// ==========================================
+data class IntroPageData(
+    val title: String,
+    val description: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val badgeText: String
+)
+
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+fun AppIntroScreen(onFinishIntro: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val pages = listOf(
+        IntroPageData(
+            title = "Welcome to SNITS Portal",
+            description = "Your official digital campus platform for real-time attendance, timetables, notes, and academic updates.",
+            icon = Icons.Default.School,
+            badgeText = "SNITS College Portal"
+        ),
+        IntroPageData(
+            title = "Smart Attendance Tracker",
+            description = "Mark daily class attendance in 1-click, view your attendance percentage %, and export detailed Excel reports.",
+            icon = Icons.Default.Assessment,
+            badgeText = "Attendance & Reports"
+        ),
+        IntroPageData(
+            title = "Class Timetables & Notes",
+            description = "Access year-specific class schedules, teacher timetables, lecture notes, and assignments anytime, anywhere.",
+            icon = Icons.Default.Schedule,
+            badgeText = "Timetables & Study Notes"
+        )
+    )
+
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { pages.size })
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(20.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .widthIn(max = 520.dp)
+                .align(Alignment.Center),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onFinishIntro) {
+                    Text("Skip", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+
+            androidx.compose.foundation.pager.HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) { page ->
+                val data = pages[page]
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.size(110.dp),
+                        shadowElevation = 6.dp
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = data.icon,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(56.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(28.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer
+                    ) {
+                        Text(
+                            text = data.badgeText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = data.title,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = data.description,
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    repeat(pages.size) { iteration ->
+                        val color = if (pagerState.currentPage == iteration) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+                        val width = if (pagerState.currentPage == iteration) 24.dp else 8.dp
+                        Box(
+                            modifier = Modifier
+                                .height(8.dp)
+                                .width(width)
+                                .background(color, shape = RoundedCornerShape(4.dp))
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Button(
+                    onClick = {
+                        if (pagerState.currentPage < pages.size - 1) {
+                            scope.launch {
+                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                            }
+                        } else {
+                            onFinishIntro()
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp)
+                ) {
+                    Text(
+                        text = if (pagerState.currentPage == pages.size - 1) "Get Started" else "Next",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = if (pagerState.currentPage == pages.size - 1) Icons.Default.ArrowForward else Icons.Default.ChevronRight,
+                        contentDescription = null
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ==========================================
 // COMMON UI: ALIGNED PORTAL TOP HEADER
 // ==========================================
 @Composable
