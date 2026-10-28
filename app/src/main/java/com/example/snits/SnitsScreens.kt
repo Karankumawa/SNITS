@@ -1,5 +1,6 @@
 package com.example.snits
 
+import android.app.Activity
 import android.content.ContentValues
 import android.os.Environment
 import android.provider.MediaStore
@@ -24,7 +25,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -34,6 +39,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 // ==========================================
 // COMMON UI: ALIGNED PORTAL TOP HEADER
@@ -262,17 +268,80 @@ fun PortalTopHeader(
 }
 
 // ==========================================
-// 1. AUTH SCREEN (Firebase Auth + Supabase Sync)
+// 1. AUTH SCREEN (Email/Pass + Firebase Phone SMS OTP)
 // ==========================================
 @Composable
 fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> Unit) {
     val context = LocalContext.current
+    val activity = context as? Activity
     val auth = FirebaseAuth.getInstance()
     val scope = rememberCoroutineScope()
 
+    var loginMode by remember { mutableIntStateOf(0) } // 0 = Email, 1 = Phone SMS OTP
+
+    // Email state
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+
+    // Phone SMS OTP state
+    var phoneNumber by remember { mutableStateOf("+91") }
+    var smsCode by remember { mutableStateOf("") }
+    var verificationId by remember { mutableStateOf("") }
+    var isOtpSent by remember { mutableStateOf(false) }
+
     var isLoading by remember { mutableStateOf(false) }
+
+    fun processPhoneSignIn(credential: PhoneAuthCredential) {
+        isLoading = true
+        auth.signInWithCredential(credential)
+            .addOnSuccessListener { result ->
+                val uid = result.user!!.uid
+                val userPhone = result.user?.phoneNumber ?: phoneNumber
+
+                scope.launch {
+                    var userRole = "student"
+                    var userRoll = "PHONE_USER"
+                    var userName = "Student User"
+
+                    try {
+                        val users = withContext(Dispatchers.IO) {
+                            SupabaseManager.client.postgrest["users"]
+                                .select { filter { eq("uid", uid) } }
+                                .decodeList<SupabaseUser>()
+                        }
+
+                        if (users.isNotEmpty()) {
+                            val user = users[0]
+                            userRole = user.role
+                            userRoll = user.rollNo
+                            userName = user.name
+                        } else {
+                            val newUser = SupabaseUser(
+                                uid = uid,
+                                name = "User ($userPhone)",
+                                email = "$userPhone@college.com",
+                                role = "student",
+                                rollNo = "STUDENT",
+                                year = "1st Year"
+                            )
+                            try {
+                                withContext(Dispatchers.IO) {
+                                    SupabaseManager.client.postgrest["users"].upsert(newUser)
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        isLoading = false
+                        onLoginSuccess(userRole, userRoll, userName)
+                    }
+                }
+            }
+            .addOnFailureListener { e ->
+                isLoading = false
+                Toast.makeText(context, "Verification Error: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+    }
 
     Box(
         modifier = Modifier
@@ -319,7 +388,26 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(20.dp))
+
+            // LOGIN MODE SEGMENTED TOGGLE (Email vs Phone SMS)
+            PrimaryTabRow(
+                selectedTabIndex = loginMode,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Tab(
+                    selected = loginMode == 0,
+                    onClick = { loginMode = 0 },
+                    text = { Text("Email Login", fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = loginMode == 1,
+                    onClick = { loginMode = 1 },
+                    text = { Text("Phone SMS OTP", fontWeight = FontWeight.Bold) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
@@ -331,139 +419,259 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                         .fillMaxWidth()
                         .padding(20.dp)
                 ) {
-                    Text(
-                        text = "Portal Login",
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(16.dp))
+                    if (loginMode == 0) {
+                        // --- EMAIL & PASSWORD LOGIN ---
+                        Text(
+                            text = "Email & Password Sign In",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
 
-                    OutlinedTextField(
-                        value = email,
-                        onValueChange = { email = it },
-                        label = { Text("College Email ID") },
-                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = "Email") },
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = email,
+                            onValueChange = { email = it },
+                            label = { Text("College Email ID") },
+                            leadingIcon = { Icon(Icons.Default.Email, contentDescription = "Email") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        label = { Text("Password") },
-                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Password") },
-                        visualTransformation = PasswordVisualTransformation(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
+                        OutlinedTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            label = { Text("Password") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
 
-                    if (isLoading) {
-                        CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
-                    } else {
-                        Button(
-                            onClick = {
-                                val cleanEmail = email.trim().lowercase()
-                                val cleanPass = password.trim()
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                        } else {
+                            Button(
+                                onClick = {
+                                    val cleanEmail = email.trim().lowercase()
+                                    val cleanPass = password.trim()
 
-                                if (cleanEmail.isBlank() || cleanPass.isBlank()) {
-                                    Toast.makeText(context, "Email aur Password dono bharein!", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-                                isLoading = true
+                                    if (cleanEmail.isBlank() || cleanPass.isBlank()) {
+                                        Toast.makeText(context, "Email aur Password dono bharein!", Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+                                    isLoading = true
 
-                                auth.signInWithEmailAndPassword(cleanEmail, cleanPass)
-                                    .addOnSuccessListener { result ->
-                                        val uid = result.user!!.uid
+                                    auth.signInWithEmailAndPassword(cleanEmail, cleanPass)
+                                        .addOnSuccessListener { result ->
+                                            val uid = result.user!!.uid
 
-                                        scope.launch {
-                                            var userRole = "student"
-                                            var userRoll = cleanEmail.substringBefore("@").uppercase()
-                                            var userName = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
+                                            scope.launch {
+                                                var userRole = "student"
+                                                var userRoll = cleanEmail.substringBefore("@").uppercase()
+                                                var userName = cleanEmail.substringBefore("@").replace(".", " ").replaceFirstChar { it.uppercase() }
 
-                                            try {
-                                                val users = withContext(Dispatchers.IO) {
-                                                    SupabaseManager.client.postgrest["users"]
-                                                        .select { filter { eq("uid", uid) } }
-                                                        .decodeList<SupabaseUser>()
-                                                }
-
-                                                if (users.isNotEmpty()) {
-                                                    val user = users[0]
-                                                    userRole = user.role
-                                                    userRoll = user.rollNo
-                                                    userName = user.name
-                                                } else {
-                                                    val emailUsers = withContext(Dispatchers.IO) {
+                                                try {
+                                                    val users = withContext(Dispatchers.IO) {
                                                         SupabaseManager.client.postgrest["users"]
-                                                            .select { filter { eq("email", cleanEmail) } }
+                                                            .select { filter { eq("uid", uid) } }
                                                             .decodeList<SupabaseUser>()
                                                     }
 
-                                                    if (emailUsers.isNotEmpty()) {
-                                                        val foundUser = emailUsers[0]
-                                                        userRole = foundUser.role
-                                                        userRoll = foundUser.rollNo
-                                                        userName = foundUser.name
-
-                                                        val syncedUser = SupabaseUser(
-                                                            uid = uid,
-                                                            name = foundUser.name,
-                                                            email = cleanEmail,
-                                                            role = foundUser.role,
-                                                            rollNo = foundUser.rollNo,
-                                                            year = foundUser.year
-                                                        )
-                                                        try {
-                                                            withContext(Dispatchers.IO) {
-                                                                SupabaseManager.client.postgrest["users"].upsert(syncedUser)
-                                                            }
-                                                        } catch (_: Exception) {}
+                                                    if (users.isNotEmpty()) {
+                                                        val user = users[0]
+                                                        userRole = user.role
+                                                        userRoll = user.rollNo
+                                                        userName = user.name
                                                     } else {
-                                                        val derivedRole = when {
-                                                            cleanEmail.contains("admin") -> "admin"
-                                                            cleanEmail.contains("teacher") -> "teacher"
-                                                            else -> "student"
+                                                        val emailUsers = withContext(Dispatchers.IO) {
+                                                            SupabaseManager.client.postgrest["users"]
+                                                                .select { filter { eq("email", cleanEmail) } }
+                                                                .decodeList<SupabaseUser>()
                                                         }
-                                                        userRole = derivedRole
-                                                        val newUser = SupabaseUser(
-                                                            uid = uid,
-                                                            name = userName,
-                                                            email = cleanEmail,
-                                                            role = userRole,
-                                                            rollNo = if (userRole == "student") userRoll else if (userRole == "admin") "ADMIN" else "TEACHER",
-                                                            year = "1st Year"
-                                                        )
-                                                        try {
-                                                            withContext(Dispatchers.IO) {
-                                                                SupabaseManager.client.postgrest["users"].upsert(newUser)
+
+                                                        if (emailUsers.isNotEmpty()) {
+                                                            val foundUser = emailUsers[0]
+                                                            userRole = foundUser.role
+                                                            userRoll = foundUser.rollNo
+                                                            userName = foundUser.name
+
+                                                            val syncedUser = SupabaseUser(
+                                                                uid = uid,
+                                                                name = foundUser.name,
+                                                                email = cleanEmail,
+                                                                role = foundUser.role,
+                                                                rollNo = foundUser.rollNo,
+                                                                year = foundUser.year
+                                                            )
+                                                            try {
+                                                                withContext(Dispatchers.IO) {
+                                                                    SupabaseManager.client.postgrest["users"].upsert(syncedUser)
+                                                                }
+                                                            } catch (_: Exception) {}
+                                                        } else {
+                                                            val derivedRole = when {
+                                                                cleanEmail.contains("admin") -> "admin"
+                                                                cleanEmail.contains("teacher") -> "teacher"
+                                                                else -> "student"
                                                             }
-                                                        } catch (_: Exception) {}
+                                                            userRole = derivedRole
+                                                            val newUser = SupabaseUser(
+                                                                uid = uid,
+                                                                name = userName,
+                                                                email = cleanEmail,
+                                                                role = userRole,
+                                                                rollNo = if (userRole == "student") userRoll else if (userRole == "admin") "ADMIN" else "TEACHER",
+                                                                year = "1st Year"
+                                                            )
+                                                            try {
+                                                                withContext(Dispatchers.IO) {
+                                                                    SupabaseManager.client.postgrest["users"].upsert(newUser)
+                                                                }
+                                                            } catch (_: Exception) {}
+                                                        }
                                                     }
+                                                } catch (_: Exception) {
+                                                } finally {
+                                                    isLoading = false
+                                                    onLoginSuccess(userRole, userRoll, userName)
                                                 }
-                                            } catch (_: Exception) {
-                                                // Non-blocking fallback
-                                            } finally {
-                                                isLoading = false
-                                                onLoginSuccess(userRole, userRoll, userName)
                                             }
                                         }
-                                    }
-                                    .addOnFailureListener { e ->
-                                        isLoading = false
-                                        Toast.makeText(context, "Login Failed: ${e.message}", Toast.LENGTH_LONG).show()
-                                    }
-                            },
+                                        .addOnFailureListener { e ->
+                                            isLoading = false
+                                            Toast.makeText(context, "Login Failed: ${e.message}", Toast.LENGTH_LONG).show()
+                                        }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Login, contentDescription = "Login")
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Login with Email", fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    } else {
+                        // --- PHONE SMS OTP VERIFICATION LOGIN ---
+                        Text(
+                            text = "Firebase SMS OTP Sign In",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = phoneNumber,
+                            onValueChange = { phoneNumber = it },
+                            label = { Text("Phone Number (+91 9876543210)") },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
+                            singleLine = true,
+                            enabled = !isOtpSent,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Login, contentDescription = "Login")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Login to Portal", fontWeight = FontWeight.Bold)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        if (isOtpSent) {
+                            OutlinedTextField(
+                                value = smsCode,
+                                onValueChange = { smsCode = it },
+                                label = { Text("Enter 6-Digit SMS OTP") },
+                                leadingIcon = { Icon(Icons.Default.Sms, contentDescription = "OTP") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                        } else {
+                            if (!isOtpSent) {
+                                Button(
+                                    onClick = {
+                                        if (phoneNumber.trim().length < 10) {
+                                            Toast.makeText(context, "Sahi Phone Number (+91) likhein!", Toast.LENGTH_SHORT).show()
+                                            return@Button
+                                        }
+                                        if (activity == null) {
+                                            Toast.makeText(context, "Activity error!", Toast.LENGTH_SHORT).show()
+                                            return@Button
+                                        }
+                                        isLoading = true
+
+                                        val formattedPhone = if (!phoneNumber.startsWith("+")) "+$phoneNumber" else phoneNumber
+
+                                        val options = PhoneAuthOptions.newBuilder(auth)
+                                            .setPhoneNumber(formattedPhone.trim())
+                                            .setTimeout(60L, TimeUnit.SECONDS)
+                                            .setActivity(activity)
+                                            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                                                override fun onVerificationCompleted(credential: PhoneAuthCredential) {
+                                                    processPhoneSignIn(credential)
+                                                }
+
+                                                override fun onVerificationFailed(e: FirebaseException) {
+                                                    isLoading = false
+                                                    Toast.makeText(context, "OTP Error: ${e.message}", Toast.LENGTH_LONG).show()
+                                                }
+
+                                                override fun onCodeSent(
+                                                    vId: String,
+                                                    token: PhoneAuthProvider.ForceResendingToken
+                                                ) {
+                                                    isLoading = false
+                                                    verificationId = vId
+                                                    isOtpSent = true
+                                                    Toast.makeText(context, "SMS OTP sent to $formattedPhone", Toast.LENGTH_SHORT).show()
+                                                }
+                                            })
+                                            .build()
+
+                                        PhoneAuthProvider.verifyPhoneNumber(options)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.Sms, contentDescription = "Send OTP")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Send SMS OTP", fontWeight = FontWeight.Bold)
+                                }
+                            } else {
+                                Button(
+                                    onClick = {
+                                        if (smsCode.trim().length < 6) {
+                                            Toast.makeText(context, "6-digit OTP code likhein!", Toast.LENGTH_SHORT).show()
+                                            return@Button
+                                        }
+                                        val credential = PhoneAuthProvider.getCredential(verificationId, smsCode.trim())
+                                        processPhoneSignIn(credential)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(Icons.Default.VerifiedUser, contentDescription = "Verify OTP")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Verify OTP & Login", fontWeight = FontWeight.Bold)
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                TextButton(
+                                    onClick = {
+                                        isOtpSent = false
+                                        smsCode = ""
+                                    },
+                                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                                ) {
+                                    Text("Change Phone Number")
+                                }
+                            }
                         }
                     }
                 }
@@ -488,7 +696,7 @@ fun AuthScreen(onLoginSuccess: (role: String, rollNo: String, name: String) -> U
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Authentication powered by Firebase Auth & Database by Supabase.",
+                        text = "Firebase Auth SMS OTP Verification & Supabase Database.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
