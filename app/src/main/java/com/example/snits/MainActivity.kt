@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.edit
 import com.example.snits.ui.theme.SNITSTheme
 import com.google.firebase.auth.FirebaseAuth
 import io.github.jan.supabase.postgrest.postgrest
@@ -26,7 +27,7 @@ class MainActivity : ComponentActivity() {
             SNITSTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
+                    color = MaterialTheme.colorScheme.background,
                 ) {
                     val context = LocalContext.current
                     val prefs = remember { context.getSharedPreferences("snits_app_prefs", Context.MODE_PRIVATE) }
@@ -70,13 +71,11 @@ class MainActivity : ComponentActivity() {
 
                     when (currentScreen) {
                         "intro" -> {
-                            AppIntroScreen(
-                                onFinishIntro = {
-                                    prefs.edit().putBoolean("is_first_run", false).apply()
-                                    isFirstRun = false
-                                    currentScreen = "splash"
-                                }
-                            )
+                            AppIntroScreen {
+                                prefs.edit { putBoolean("is_first_run", false) }
+                                isFirstRun = false
+                                currentScreen = "splash"
+                            }
                         }
                         "splash" -> {
                             Box(
